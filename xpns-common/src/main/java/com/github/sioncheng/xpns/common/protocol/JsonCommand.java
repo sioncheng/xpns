@@ -1,10 +1,20 @@
-package com.github.sioncheng.xpns.common;
+package com.github.sioncheng.xpns.common.protocol;
 
 import com.alibaba.fastjson.JSONObject;
 
 import java.util.concurrent.atomic.AtomicLong;
 
 public class JsonCommand {
+
+    public static final int LOGIN_CODE = 1;
+    public static final int LOGON_CODE = 2;
+    public static final int NOTIFICATION_CODE = 3;
+    public static final int ACK_CODE = 4;
+    public static final int HEART_BEAT_CODE = 5;
+
+    public static final String COMMAND_CODE = "commandCode";
+    public static final String ACID = "acid";
+    public static final String NOTIFICATION = "notification";
 
     public static JsonCommand create(byte commandType, JSONObject commandObject) {
         return create(SerialNumberCounter.incrementAndGet(), commandType, commandObject);
@@ -29,6 +39,14 @@ public class JsonCommand {
 
     public JSONObject getCommandObject() {
         return commandObject;
+    }
+
+    public int getCommandCode() {
+        return this.commandObject.getInteger(COMMAND_CODE);
+    }
+
+    public String getAcid() {
+        return this.commandObject.getString(ACID);
     }
 
     private long serialNumber;

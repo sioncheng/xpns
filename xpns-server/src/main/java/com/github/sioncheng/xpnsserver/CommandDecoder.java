@@ -1,7 +1,7 @@
 package com.github.sioncheng.xpnsserver;
 
-import com.github.sioncheng.xpns.common.Command;
-import com.sun.tools.javac.util.Assert;
+import com.github.sioncheng.xpns.common.util.AssertUtil;
+import com.github.sioncheng.xpns.common.protocol.Command;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.ByteToMessageDecoder;
@@ -22,8 +22,9 @@ public class CommandDecoder extends ByteToMessageDecoder {
                         byteBuf.markReaderIndex();
                         return;
                     }
-                    Assert.check(Command.MAGIC_BYTE_HIGH == byteBuf.readByte(), "check magic byte high");
-                    Assert.check(Command.MAGIC_BYTE_LOW == byteBuf.readByte(), "check magic byte low");
+
+                    AssertUtil.check(Command.MAGIC_BYTE_HIGH == byteBuf.readByte(), "check magic byte high");
+                    AssertUtil.check(Command.MAGIC_BYTE_LOW == byteBuf.readByte(), "check magic byte low");
 
                     status = EXPECT_SERIAL_NUMBER;
                     break;
@@ -69,7 +70,7 @@ public class CommandDecoder extends ByteToMessageDecoder {
                     byteBuf.readBytes(payloadLengthBytes);
                     payloadLength = ByteBuffer.wrap(payloadLengthBytes).order(ByteOrder.BIG_ENDIAN).getInt();
 
-                    Assert.check(payloadLength < 4096, "check payload length");
+                    AssertUtil.check(payloadLength < 4096, "check payload length");
 
                     status = EXPECT_PAYLOAD;
                     break;
@@ -97,6 +98,13 @@ public class CommandDecoder extends ByteToMessageDecoder {
                     break;
             }
         }
+    }
+
+    @Override
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+        super.exceptionCaught(ctx, cause);
+
+
     }
 
     private int status = EXPECT_MAGIC_BYTES;

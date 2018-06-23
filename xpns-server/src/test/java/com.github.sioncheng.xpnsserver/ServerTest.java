@@ -2,7 +2,9 @@ package com.github.sioncheng.xpnsserver;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
-import com.github.sioncheng.xpns.common.Command;
+import com.github.sioncheng.xpns.common.client.SessionInfo;
+import com.github.sioncheng.xpns.common.protocol.Command;
+import com.github.sioncheng.xpns.common.protocol.JsonCommand;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -16,16 +18,19 @@ public class ServerTest {
 
     @Test
     public void testServerStart() throws Exception {
-        Server server = new Server();
-        boolean result = server.start(8080, 2);
+        XpnsServer xpnsServer = new XpnsServer(10, null, "localhost");
+        boolean result = xpnsServer.start(8080, 2);
         Assert.assertTrue(result);
-        server.stop();
+        xpnsServer.stop();
     }
 
     @Test
     public void testHandleClient() throws Exception {
-        Server server = new Server();
-        boolean result = server.start(8080, 2);
+
+        RedisSessionManager redisSessionManager = new RedisSessionManager("localhost", 6379);
+
+        XpnsServer xpnsServer = new XpnsServer(10, redisSessionManager, "localhost");
+        boolean result = xpnsServer.start(8080, 2);
         Assert.assertTrue(result);
 
         Socket socket = new Socket();
@@ -33,7 +38,7 @@ public class ServerTest {
 
         JSONObject jsonObject = new JSONObject();
         jsonObject.put("acid", "320000000001");
-        jsonObject.put("command", 1);
+        jsonObject.put(JsonCommand.COMMAND_CODE, JsonCommand.LOGIN_CODE);
 
         byte[] payload = jsonObject.toJSONString().getBytes("UTF-8");
 
@@ -89,9 +94,22 @@ public class ServerTest {
         String s = new String(responsePayloadBytes);
         System.out.println(s);
 
+        JSONObject jsonObject1 = JSON.parseObject(s);
+        Assert.assertEquals(JsonCommand.LOGON_CODE, jsonObject1.getInteger(JsonCommand.COMMAND_CODE).intValue());
+
+        Thread.sleep(200);
+
+        SessionInfo sessionInfo = redisSessionManager.getClient("320000000001");
+        Assert.assertNotNull(sessionInfo);
+
         socket.close();
 
-        server.stop();
+        xpnsServer.stop();
+
+        Thread.sleep(200);
+
+        SessionInfo sessionInfo1 = redisSessionManager.getClient("320000000001");
+        Assert.assertNull(sessionInfo1);
 
     }
 }

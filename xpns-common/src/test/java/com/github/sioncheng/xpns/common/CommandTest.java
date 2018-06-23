@@ -1,6 +1,8 @@
 package com.github.sioncheng.xpns.common;
 
 import com.alibaba.fastjson.JSONObject;
+import com.github.sioncheng.xpns.common.protocol.Command;
+import com.github.sioncheng.xpns.common.protocol.JsonCommand;
 import org.junit.Assert;
 import org.junit.Test;
 

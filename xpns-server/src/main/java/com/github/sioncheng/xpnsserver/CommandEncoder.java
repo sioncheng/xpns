@@ -1,6 +1,6 @@
 package com.github.sioncheng.xpnsserver;
 
-import com.github.sioncheng.xpns.common.Command;
+import com.github.sioncheng.xpns.common.protocol.Command;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.MessageToByteEncoder;

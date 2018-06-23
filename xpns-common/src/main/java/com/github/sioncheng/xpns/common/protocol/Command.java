@@ -1,4 +1,4 @@
-package com.github.sioncheng.xpns.common;
+package com.github.sioncheng.xpns.common.protocol;
 
 public class Command {
 
@@ -14,6 +14,18 @@ public class Command {
 
     public Command() {
 
+    }
+
+    public Command(long serialNumber,
+                   byte commandType,
+                   byte serializationType,
+                   int payloadLength,
+                   byte[] payloadBytes) {
+        this.serialNumber = serialNumber;
+        this.commandType = commandType;
+        this.serializationType = serializationType;
+        this.payloadLength = payloadLength;
+        this.payloadBytes = payloadBytes;
     }
 
     public long getSerialNumber() {
