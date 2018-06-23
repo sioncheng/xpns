@@ -16,11 +16,50 @@ public class Command {
 
     }
 
+    public long getSerialNumber() {
+        return serialNumber;
+    }
+
+    public void setSerialNumber(long serialNumber) {
+        this.serialNumber = serialNumber;
+    }
+
+    public byte getCommandType() {
+        return commandType;
+    }
+
+    public void setCommandType(byte commandType) {
+        this.commandType = commandType;
+    }
+
+    public byte getSerializationType() {
+        return serializationType;
+    }
+
+    public void setSerializationType(byte serializationType) {
+        this.serializationType = serializationType;
+    }
+
+    public int getPayloadLength() {
+        return payloadLength;
+    }
+
+    public void setPayloadLength(int payloadLength) {
+        this.payloadLength = payloadLength;
+    }
+
+    public byte[] getPayloadBytes() {
+        return payloadBytes;
+    }
+
+    public void setPayloadBytes(byte[] payloadBytes) {
+        this.payloadBytes = payloadBytes;
+    }
 
     private long serialNumber;
     private byte commandType;
     private byte serializationType;
     private int payloadLength;
-    private byte[] payload;
+    private byte[] payloadBytes;
 
 }

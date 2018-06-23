@@ -16,6 +16,7 @@
         <module>xpns-server</module>
         <module>xpns-zookeeper</module>
         <module>xpns-event</module>
+        <module>xpns-client</module>
     </modules>
 
     <properties>
@@ -25,6 +26,9 @@
         <maven.compiler.target>${java.version}</maven.compiler.target>
         <junit.version>4.12</junit.version>
         <fastjson.version>1.2.44</fastjson.version>
+        <netty.version>4.1.24.Final</netty.version>
+        <slf4j.version>1.7.25</slf4j.version>
+        <logback-classic.version>1.2.3</logback-classic.version>
     </properties>
 
     <dependencyManagement>
@@ -41,6 +45,26 @@
                 <version>${junit.version}</version>
                 <scope>test</scope>
             </dependency>
+            <!-- https://mvnrepository.com/artifact/io.netty/netty-all -->
+            <dependency>
+                <groupId>io.netty</groupId>
+                <artifactId>netty-all</artifactId>
+                <version>${netty.version}</version>
+            </dependency>
+            <!-- https://mvnrepository.com/artifact/org.slf4j/slf4j-api -->
+            <dependency>
+                <groupId>org.slf4j</groupId>
+                <artifactId>slf4j-api</artifactId>
+                <version>${slf4j.version}</version>
+            </dependency>
+
+            <!-- https://mvnrepository.com/artifact/ch.qos.logback/logback-classic -->
+            <dependency>
+                <groupId>ch.qos.logback</groupId>
+                <artifactId>logback-classic</artifactId>
+                <version>${logback-classic.version}</version>
+            </dependency>
+
 
         </dependencies>
     </dependencyManagement>
