@@ -2,9 +2,12 @@ package com.github.sioncheng.xpnsserver;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
+import com.github.sioncheng.xpns.common.client.Notification;
 import com.github.sioncheng.xpns.common.client.SessionInfo;
+import com.github.sioncheng.xpns.common.client.SessionManager;
 import com.github.sioncheng.xpns.common.protocol.Command;
 import com.github.sioncheng.xpns.common.protocol.JsonCommand;
+import okhttp3.*;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -15,29 +18,24 @@ import java.nio.ByteOrder;
 
 public class ServerTest {
 
-
-    @Test
-    public void testServerStart() throws Exception {
-        XpnsServer xpnsServer = new XpnsServer(10, null, "localhost");
-        boolean result = xpnsServer.start(8080, 2);
-        Assert.assertTrue(result);
-        xpnsServer.stop();
-    }
-
     @Test
     public void testHandleClient() throws Exception {
 
-        RedisSessionManager redisSessionManager = new RedisSessionManager("localhost", 6379);
+        final String acid = "320000000001";
 
-        XpnsServer xpnsServer = new XpnsServer(10, redisSessionManager, "localhost");
-        boolean result = xpnsServer.start(8080, 2);
+        SessionManager sessionManager = this.createSessionManager();
+
+        XpnsServer xpnsServer = new XpnsServer(this.createXpnsServerConfig(),
+                sessionManager,
+                this.createNotificationManager());
+        boolean result = xpnsServer.start();
         Assert.assertTrue(result);
 
         Socket socket = new Socket();
         socket.connect(new InetSocketAddress(8080));
 
         JSONObject jsonObject = new JSONObject();
-        jsonObject.put("acid", "320000000001");
+        jsonObject.put("acid", acid);
         jsonObject.put(JsonCommand.COMMAND_CODE, JsonCommand.LOGIN_CODE);
 
         byte[] payload = jsonObject.toJSONString().getBytes("UTF-8");
@@ -99,8 +97,72 @@ public class ServerTest {
 
         Thread.sleep(200);
 
-        SessionInfo sessionInfo = redisSessionManager.getClient("320000000001");
+        SessionInfo sessionInfo = sessionManager.getClient(acid);
         Assert.assertNotNull(sessionInfo);
+
+        final MediaType jsonMediaType = MediaType.parse("application/json; charset=utf-8");
+
+        JSONObject getClientReq = new JSONObject();
+        getClientReq.put("acid", acid);
+        RequestBody requestBody = RequestBody.create(jsonMediaType, getClientReq.toJSONString());
+
+        Request request = new Request.Builder().url("http://localhost:9090/client")
+                .post(requestBody)
+                .addHeader("Content-Type", "application/json")
+                .build();
+
+        OkHttpClient okHttpClient = new OkHttpClient();
+
+        Response response = okHttpClient.newCall(request).execute();
+        String body = response.body().string();
+        response.close();
+
+        JSONObject responseObject = JSON.parseObject(body);
+        JSONObject sessionInfoJson = responseObject.getJSONObject("sessionInfo");
+        Assert.assertNotNull(sessionInfoJson);
+
+        Notification notification = new Notification();
+        notification.setTo(acid);
+        notification.setTitle("title");
+        notification.setBody("body");
+        notification.setExt(responseObject);
+
+        requestBody = RequestBody.create(jsonMediaType, notification.toJSONObject().toJSONString());
+        request = new Request.Builder().url("http://localhost:9090/notification")
+                .post(requestBody)
+                .addHeader("Content-Type", "application/json")
+                .build();
+
+        response = okHttpClient.newCall(request).execute();
+        body = response.body().string();
+        response.close();
+
+        responseObject = JSON.parseObject(body);
+        Assert.assertEquals("ok", responseObject.getString("result"));
+
+        socket.getInputStream().read(magicBytes);
+        Assert.assertEquals(Command.MAGIC_BYTE_HIGH, magicBytes[0]);
+        Assert.assertEquals(Command.MAGIC_BYTE_LOW, magicBytes[1]);
+
+        serialnumberBytes = new byte[8];
+        socket.getInputStream().read(serialnumberBytes);
+        Assert.assertEquals(1, serialnumberBytes[7]);
+
+        commandType = (byte)socket.getInputStream().read();
+        Assert.assertEquals(Command.REQUEST, commandType);
+
+        serializationType = (byte)socket.getInputStream().read();
+        Assert.assertEquals(Command.JSON_SERIALIZATION, serializationType);
+
+        responsePayloadLengthBytes = new byte[4];
+        socket.getInputStream().read(responsePayloadLengthBytes);
+        responsePayloadLength = ByteBuffer.wrap(responsePayloadLengthBytes).order(ByteOrder.BIG_ENDIAN).getInt();
+        Assert.assertTrue(responsePayloadLength > 0);
+
+        responsePayloadBytes = new byte[responsePayloadLength];
+        socket.getInputStream().read(responsePayloadBytes);
+        s = new String(responsePayloadBytes);
+        System.out.println(s);
 
         socket.close();
 
@@ -108,8 +170,45 @@ public class ServerTest {
 
         Thread.sleep(200);
 
-        SessionInfo sessionInfo1 = redisSessionManager.getClient("320000000001");
+        SessionInfo sessionInfo1 = sessionManager.getClient("320000000001");
         Assert.assertNull(sessionInfo1);
 
+    }
+
+    private XpnsServerConfig createXpnsServerConfig() {
+
+        XpnsServerConfig xpnsServerConfig = new XpnsServerConfig();
+        xpnsServerConfig.setClientPort(8080);
+        xpnsServerConfig.setApiServer("localhost");
+        xpnsServerConfig.setApiPort(9090);
+        xpnsServerConfig.setMaxClients(10);
+        xpnsServerConfig.setNettyEventLoopGroupThreadsForClient(4);
+        xpnsServerConfig.setNettyEventLoopGroupThreadsForApi(2);
+
+
+        return xpnsServerConfig;
+    }
+
+    private KafkaNotificationManager createNotificationManager() {
+
+        KafkaNotificationConsumerConfig consumerConfig = new KafkaNotificationConsumerConfig();
+        consumerConfig.setAutoCommitIntervalMS(1000);
+        consumerConfig.setBootstrapServer("localhost:9092");
+        consumerConfig.setEnableAutoCommit(true);
+        consumerConfig.setGroupId("xpns-server");
+        consumerConfig.setKeyDeserializer("org.apache.kafka.common.serialization.StringDeserializer");
+        consumerConfig.setValueDeserializer("org.apache.kafka.common.serialization.StringDeserializer");
+        consumerConfig.setSessionTimeoutMS(30000);
+
+        KafkaNotificationManager notificationManager = new KafkaNotificationManager(consumerConfig);
+
+        return notificationManager;
+    }
+
+    private SessionManager createSessionManager() {
+
+        RedisSessionManager redisSessionManager = new RedisSessionManager("localhost", 6379);
+
+        return redisSessionManager;
     }
 }

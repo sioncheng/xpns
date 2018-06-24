@@ -55,6 +55,14 @@ public class Notification {
         return jsonObject;
     }
 
+    public void fromJSONObject(JSONObject jsonObject) {
+        this.setUniqId(jsonObject.getString("uniqId"));
+        this.setTo(jsonObject.getString("to"));
+        this.setTitle(jsonObject.getString("title"));
+        this.setBody(jsonObject.getString("body"));
+        this.setExt(jsonObject.getJSONObject("ext"));
+    }
+
     private String uniqId;
 
     private String to;

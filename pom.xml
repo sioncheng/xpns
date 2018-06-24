@@ -17,6 +17,8 @@
         <module>xpns-zookeeper</module>
         <module>xpns-event</module>
         <module>xpns-client</module>
+        <module>xpns-soa</module>
+        <module>xpns-dispatcher</module>
     </modules>
 
     <properties>
