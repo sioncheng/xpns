@@ -11,5 +11,20 @@
 
     <artifactId>xpns-client</artifactId>
 
+    <dependencies>
+        <dependency>
+            <groupId>com.github.sioncheng</groupId>
+            <artifactId>xpns-common</artifactId>
+            <version>1.0-SNAPSHOT</version>
+        </dependency>
+        <dependency>
+            <groupId>io.vertx</groupId>
+            <artifactId>vertx-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.alibaba</groupId>
+            <artifactId>fastjson</artifactId>
+        </dependency>
+    </dependencies>
 
 </project>

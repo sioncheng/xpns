@@ -5,7 +5,7 @@ import org.apache.commons.lang3.StringUtils;
 import java.io.*;
 import java.util.HashMap;
 
-public class XpnsServerProperties {
+public class ServerProperties {
 
     private static HashMap<String, String> properties = new HashMap<>();
 
@@ -14,9 +14,21 @@ public class XpnsServerProperties {
         loadSpecific();
     }
 
+    public static String getString(String key) {
+        return properties.get(key);
+    }
+
+    public static int getInt(String key) {
+        return Integer.parseInt(properties.get(key));
+    }
+
+    public static boolean getBoolean(String key) {
+        return Boolean.parseBoolean(properties.get(key));
+    }
+
     private static void loadDefault() throws IOException {
         InputStream inputStream =
-                XpnsServerProperties.class.getClassLoader().getResourceAsStream("xpns-server.properties");
+                ServerProperties.class.getClassLoader().getResourceAsStream("xpns-server.properties");
 
         loadFromFileConfig(inputStream);
     }

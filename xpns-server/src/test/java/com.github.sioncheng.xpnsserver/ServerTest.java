@@ -193,6 +193,7 @@ public class ServerTest {
 
         KafkaNotificationConsumerConfig consumerConfig = new KafkaNotificationConsumerConfig();
         consumerConfig.setAutoCommitIntervalMS(1000);
+        consumerConfig.setAutoOffsetReset("smallest");
         consumerConfig.setBootstrapServer("localhost:9092");
         consumerConfig.setEnableAutoCommit(true);
         consumerConfig.setGroupId("xpns-server");

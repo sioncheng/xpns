@@ -88,7 +88,7 @@ public class ApiHttpHandler extends SimpleChannelInboundHandler<FullHttpRequest>
     }
 
     private void handle404(ChannelHandlerContext ctx, FullHttpRequest msg) {
-
+        response(ctx, "404");
     }
 
     private void response(ChannelHandlerContext ctx, String msg) {

@@ -16,6 +16,7 @@ import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.codec.http.HttpObjectAggregator;
 import io.netty.handler.codec.http.HttpRequestDecoder;
 import io.netty.handler.codec.http.HttpResponseEncoder;
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -66,9 +67,13 @@ public class XpnsServer implements ClientChannelEventListener {
 
     @Override
     public void clientChannelInactive(ClientChannel clientChannel) {
-        clientChannelsCounter.decrementAndGet();
-
-        this.sessionManager.removeClient(clientChannel.getAcid(), this.serverConfig.getApiServer());
+        this.clientChannelsCounter.decrementAndGet();
+        String acid = clientChannel.getAcid();
+        if (StringUtils.isNotEmpty(acid)) {
+            this.sessionManager.removeClient(acid, this.serverConfig.getApiServer());
+            this.sendingNotifications.remove(acid);
+            this.queuingNotifications.remove(acid);
+        }
     }
 
     public void notificationIn(Notification notification) {
@@ -278,7 +283,7 @@ public class XpnsServer implements ClientChannelEventListener {
         this.sendingNotifications.remove(acid);
 
         ConcurrentLinkedQueue<Notification> queue = this.queuingNotifications.get(acid);
-        if (queue.size() > 0) {
+        if (queue != null && queue.size() > 0) {
             this.notificationTasks.add(queue.poll());
         }
     }

@@ -6,6 +6,8 @@ import java.util.concurrent.atomic.AtomicLong;
 
 public class JsonCommand {
 
+    private JsonCommand(){}
+
     public static final int LOGIN_CODE = 1;
     public static final int LOGON_CODE = 2;
     public static final int NOTIFICATION_CODE = 3;
@@ -44,6 +46,8 @@ public class JsonCommand {
     public int getCommandCode() {
         return this.commandObject.getInteger(COMMAND_CODE);
     }
+
+    public void setCommandCode(int commandCode) {this.commandObject.put(COMMAND_CODE, commandCode);}
 
     public String getAcid() {
         return this.commandObject.getString(ACID);

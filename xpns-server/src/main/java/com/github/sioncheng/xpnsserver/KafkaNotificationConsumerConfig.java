@@ -10,6 +10,7 @@ public class KafkaNotificationConsumerConfig {
                                            String groupId,
                                            int sessionTimeoutMS,
                                            int autoCommitIntervalMS,
+                                           String autoOffsetReset,
                                            boolean enableAutoCommit,
                                            String keyDeserializer,
                                            String valueDeserializer) {
@@ -17,6 +18,7 @@ public class KafkaNotificationConsumerConfig {
         this.groupId = groupId;
         this.sessionTimeoutMS = sessionTimeoutMS;
         this.autoCommitIntervalMS = autoCommitIntervalMS;
+        this.autoOffsetReset = autoOffsetReset;
         this.enableAutoCommit = enableAutoCommit;
         this.keyDeserializer = keyDeserializer;
         this.valueDeserializer = valueDeserializer;
@@ -54,6 +56,14 @@ public class KafkaNotificationConsumerConfig {
         this.autoCommitIntervalMS = autoCommitIntervalMS;
     }
 
+    public String getAutoOffsetReset() {
+        return autoOffsetReset;
+    }
+
+    public void setAutoOffsetReset(String autoOffsetReset) {
+        this.autoOffsetReset = autoOffsetReset;
+    }
+
     public boolean isEnableAutoCommit() {
         return enableAutoCommit;
     }
@@ -82,6 +92,7 @@ public class KafkaNotificationConsumerConfig {
     private String groupId;
     private int sessionTimeoutMS;
     private int autoCommitIntervalMS;
+    private String autoOffsetReset;
     private boolean enableAutoCommit;
     private String keyDeserializer;
     private String valueDeserializer;

@@ -27,6 +27,7 @@ public class KafkaNotificationManager  {
         props.put("group.id", this.consumerConfig.getGroupId());//消费者的组id
         props.put("enable.auto.commit", Boolean.toString(this.consumerConfig.isEnableAutoCommit()));
         props.put("auto.commit.interval.ms", Integer.valueOf(this.consumerConfig.getAutoCommitIntervalMS()));
+        props.put("auto.offset.reset", this.consumerConfig.getAutoOffsetReset());
         props.put("session.timeout.ms", Integer.valueOf(this.consumerConfig.getSessionTimeoutMS()));
         props.put("key.deserializer", this.consumerConfig.getKeyDeserializer());
         props.put("value.deserializer", this.consumerConfig.getValueDeserializer());
