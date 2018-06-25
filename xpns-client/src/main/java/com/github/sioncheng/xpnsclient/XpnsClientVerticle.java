@@ -32,12 +32,26 @@ public class XpnsClientVerticle extends AbstractVerticle {
     public void start() {
         //super.start();
 
-        netSocket.handler(this::socketHandle);
+        netSocket.handler(this::socketHandler);
+        netSocket.closeHandler(this::socketCloseHandler);
+        netSocket.exceptionHandler(this::socketExceptionHandler);
 
         login();
     }
 
-    private void socketHandle(Buffer buffer) {
+    private void socketCloseHandler(Void v) {
+        logger.warn("socket closed");
+        vertx.eventBus().send(ClientActivationEvent.EVENT_ADDRESS,
+                new ClientActivationEvent(clientId, ClientActivationEvent.CLOSE_EVENT).toJSONObject().toJSONString());
+    }
+
+    private void socketExceptionHandler(Throwable t) {
+        logger.warn("socket exception", t);
+        vertx.eventBus().send(ClientActivationEvent.EVENT_ADDRESS,
+                new ClientActivationEvent(clientId, ClientActivationEvent.CLOSE_EVENT).toJSONObject().toJSONString());
+    }
+
+    private void socketHandler(Buffer buffer) {
 
         if (this.tempBuffer != null) {
             this.tempBuffer = this.tempBuffer.appendBuffer(buffer);
@@ -173,6 +187,9 @@ public class XpnsClientVerticle extends AbstractVerticle {
                     if (logger.isInfoEnabled()) {
                         logger.info(String.format("logon %s", clientId));
                     }
+                    vertx.eventBus().send(ClientActivationEvent.EVENT_ADDRESS,
+                            new ClientActivationEvent(clientId, ClientActivationEvent.LOGON_EVENT).toJSONObject().toJSONString());
+
                     vertx.setPeriodic(300000, this::handlePeriodic);
                     break;
                 case JsonCommand.NOTIFICATION_CODE:
@@ -180,6 +197,8 @@ public class XpnsClientVerticle extends AbstractVerticle {
                     if (logger.isInfoEnabled()) {
                         logger.info(String.format("notification %s", jsonObject.toJSONString()));
                     }
+                    vertx.eventBus().send(ClientActivationEvent.EVENT_ADDRESS,
+                            new ClientActivationEvent(clientId, ClientActivationEvent.NOTIFICATION_EVENT).toJSONObject().toJSONString());
                     this.handelNotification(jsonCommand);
                     break;
                 case JsonCommand.HEART_BEAT_CODE:

@@ -1,14 +1,14 @@
 package com.github.sioncheng.xpnsclient;
 
+import com.alibaba.fastjson.JSON;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Handler;
+import io.vertx.core.eventbus.Message;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.core.net.NetClient;
 import io.vertx.core.net.NetSocket;
-
-import java.util.HashMap;
 
 public class XpnsClientsVerticle extends AbstractVerticle {
 
@@ -21,18 +21,41 @@ public class XpnsClientsVerticle extends AbstractVerticle {
         this.clients = clients;
         this.remoteHost = remoteHost;
         this.remotePort = remotePort;
-        this.xpnsClients = new HashMap<>();
         this.connected = 0;
     }
 
     @Override
-    public void start() throws Exception {
+    public void start() {
         //super.start();
 
-        connectToRemote();
+        vertx.eventBus().consumer(ClientActivationEvent.EVENT_ADDRESS, this::clientActivationEventHandler);
+
+        startConnections();
     }
 
-    private void connectToRemote() {
+    private void clientActivationEventHandler(Message<String> msg) {
+        ClientActivationEvent event = JSON.parseObject(msg.body(), ClientActivationEvent.class);
+
+        switch (event.getEventType()) {
+            case ClientActivationEvent.LOGON_EVENT:
+                if (logger.isInfoEnabled()) {
+                    logger.info(String.format("logon event %s", event.getAcid()));
+                }
+                break;
+            case ClientActivationEvent.NOTIFICATION_EVENT:
+                if (logger.isInfoEnabled()) {
+                    logger.info(String.format("notification event %s", event.getAcid()));
+                }
+                break;
+            case ClientActivationEvent.CLOSE_EVENT:
+                if (logger.isInfoEnabled()) {
+                    logger.info(String.format("close event %s", event.getAcid()));
+                }
+                break;
+        }
+    }
+
+    private void startConnections() {
         NetClient netClient = vertx.createNetClient();
         netClient.connect(this.remotePort, this.remoteHost, new Handler<AsyncResult<NetSocket>>() {
             @Override
@@ -52,7 +75,7 @@ public class XpnsClientsVerticle extends AbstractVerticle {
                 }
 
                 if (connected < clients) {
-                    connectToRemote();
+                    startConnections();
                 } else {
                     logger.info(String.format("reach the max clients %d", clients));
                 }
@@ -87,7 +110,6 @@ public class XpnsClientsVerticle extends AbstractVerticle {
     private String remoteHost;
     private int remotePort;
 
-    private HashMap<String, XpnsClientVerticle> xpnsClients;
     private int connected;
     private Logger logger = LoggerFactory.getLogger(XpnsClientVerticle.class);
 }
