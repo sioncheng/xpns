@@ -9,7 +9,7 @@
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
-    <artifactId>xpns-xpnsServer</artifactId>
+    <artifactId>xpns-server</artifactId>
 
     <dependencies>
         <dependency>
