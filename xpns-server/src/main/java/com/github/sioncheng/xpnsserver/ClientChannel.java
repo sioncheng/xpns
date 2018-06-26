@@ -3,6 +3,7 @@ package com.github.sioncheng.xpnsserver;
 import com.github.sioncheng.xpns.common.protocol.Command;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.handler.timeout.IdleStateEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -10,6 +11,7 @@ public class ClientChannel extends SimpleChannelInboundHandler<Command> {
 
     public ClientChannel(ClientChannelEventListener clientChannelEventListener) {
         this.clientChannelEventListener = clientChannelEventListener;
+        this.publishInactive = true;
     }
 
     public void writeCommand(Command command) {
@@ -19,15 +21,25 @@ public class ClientChannel extends SimpleChannelInboundHandler<Command> {
     }
 
     public void shutdown() {
-       if (this.ctx == null) {
-           return;
-       }
+       shutdown(true);
+    }
 
-       this.ctx.channel().disconnect();
-       this.ctx.channel().close();
-       this.ctx.disconnect();
-       this.ctx.close();
-       this.ctx = null;
+    public void shutdown(boolean publishInactive) {
+        if (this.ctx == null) {
+            return;
+        }
+
+        this.publishInactive = publishInactive;
+
+        this.ctx.channel().disconnect();
+        this.ctx.channel().close();
+        this.ctx.disconnect();
+        this.ctx.close();
+        this.ctx = null;
+
+        if (logger.isInfoEnabled()) {
+            logger.info("client channel shutdown {}", this.getAcid());
+        }
     }
 
     public String getAcid() {
@@ -39,7 +51,7 @@ public class ClientChannel extends SimpleChannelInboundHandler<Command> {
     }
 
     @Override
-    public void channelActive(ChannelHandlerContext ctx) throws Exception {
+    public void channelActive(ChannelHandlerContext ctx) {
 
         this.ctx = ctx;
 
@@ -51,13 +63,13 @@ public class ClientChannel extends SimpleChannelInboundHandler<Command> {
             logger.info("channel active {}", ctx.channel().remoteAddress().toString());
         }
 
-        super.channelActive(ctx);
+        //super.channelActive(ctx);
     }
 
     @Override
-    public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+    public void channelInactive(ChannelHandlerContext ctx) {
 
-        if (this.clientChannelEventListener != null) {
+        if (this.clientChannelEventListener != null && this.publishInactive) {
             this.clientChannelEventListener.clientChannelInactive(this);
         }
 
@@ -65,7 +77,26 @@ public class ClientChannel extends SimpleChannelInboundHandler<Command> {
             logger.info("channel inactive {}", ctx.channel().remoteAddress().toString());
         }
 
-        super.channelInactive(ctx);
+        //super.channelInactive(ctx);
+    }
+
+    @Override
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+
+        logger.warn("exception caught {}", cause);
+
+        this.shutdown();
+
+        //super.exceptionCaught(ctx, cause);
+    }
+
+    @Override
+    public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
+        if (evt instanceof IdleStateEvent) {
+            this.shutdown();
+        } else {
+            super.userEventTriggered(ctx, evt);
+        }
     }
 
     @Override
@@ -89,6 +120,7 @@ public class ClientChannel extends SimpleChannelInboundHandler<Command> {
     private ClientChannelEventListener clientChannelEventListener;
     private ChannelHandlerContext ctx;
     private volatile String acid;
+    private volatile boolean publishInactive;
 
     private static final Logger logger = LoggerFactory.getLogger(ClientChannel.class);
 }

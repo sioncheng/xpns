@@ -19,6 +19,7 @@
         <module>xpns-client</module>
         <module>xpns-soa</module>
         <module>xpns-dispatcher</module>
+        <module>xpns-server-vertx</module>
     </modules>
 
     <properties>

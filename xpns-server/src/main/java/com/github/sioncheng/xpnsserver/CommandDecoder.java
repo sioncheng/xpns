@@ -5,6 +5,8 @@ import com.github.sioncheng.xpns.common.protocol.Command;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.ByteToMessageDecoder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -19,6 +21,9 @@ public class CommandDecoder extends ByteToMessageDecoder {
             switch (status) {
                 case EXPECT_MAGIC_BYTES :
                     if (byteBuf.readableBytes() < 2) {
+                        if (logger.isInfoEnabled()) {
+                            logger.info("not enough data for magic bytes");
+                        }
                         byteBuf.markReaderIndex();
                         return;
                     }
@@ -30,6 +35,9 @@ public class CommandDecoder extends ByteToMessageDecoder {
                     break;
                 case EXPECT_SERIAL_NUMBER:
                     if (byteBuf.readableBytes() < 8) {
+                        if (logger.isInfoEnabled()) {
+                            logger.info("not enough data for serial number bytes");
+                        }
                         byteBuf.markReaderIndex();
                         return;
                     }
@@ -42,6 +50,9 @@ public class CommandDecoder extends ByteToMessageDecoder {
                     break;
                 case EXPECT_COMMAND_TYPE:
                     if (byteBuf.readableBytes() < 1) {
+                        if (logger.isInfoEnabled()) {
+                            logger.info("not enough data for command type bytes");
+                        }
                         byteBuf.markReaderIndex();
                         return;
                     }
@@ -52,6 +63,9 @@ public class CommandDecoder extends ByteToMessageDecoder {
                     break;
                 case EXPECT_SERIALIZATION_TYPE:
                     if (byteBuf.readableBytes() < 1) {
+                        if (logger.isInfoEnabled()) {
+                            logger.info("not enough data for serialization type bytes");
+                        }
                         byteBuf.markReaderIndex();
                         return;
                     }
@@ -62,6 +76,9 @@ public class CommandDecoder extends ByteToMessageDecoder {
                     break;
                 case EXPECT_PAYLOAD_LENGTH:
                     if (byteBuf.readableBytes() < 4) {
+                        if (logger.isInfoEnabled()) {
+                            logger.info("not enough data for payload length bytes");
+                        }
                         byteBuf.markReaderIndex();
                         return;
                     }
@@ -76,6 +93,9 @@ public class CommandDecoder extends ByteToMessageDecoder {
                     break;
                 case EXPECT_PAYLOAD:
                     if (byteBuf.readableBytes() < payloadLength) {
+                        if (logger.isInfoEnabled()) {
+                            logger.info("not enough data for payload bytes");
+                        }
                         byteBuf.markReaderIndex();
                         return;
                     }
@@ -100,13 +120,6 @@ public class CommandDecoder extends ByteToMessageDecoder {
         }
     }
 
-    @Override
-    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-        super.exceptionCaught(ctx, cause);
-
-
-    }
-
     private int status = EXPECT_MAGIC_BYTES;
 
     private static final int EXPECT_MAGIC_BYTES = 1;
@@ -121,4 +134,6 @@ public class CommandDecoder extends ByteToMessageDecoder {
     private byte serializationType;
     private int payloadLength;
     private byte[] payloadBytes;
+
+    private static final Logger logger = LoggerFactory.getLogger(CommandDecoder.class);
 }

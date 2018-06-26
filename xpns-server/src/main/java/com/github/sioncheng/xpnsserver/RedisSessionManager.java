@@ -48,6 +48,7 @@ public class RedisSessionManager implements SessionManager {
     public SessionInfo getClient(String acid) {
         Jedis jedis = jedisPool.getResource();
         String jsonData = jedis.get(ONLINE + acid);
+        jedis.close();
         if (StringUtils.isEmpty(jsonData)) {
             return null;
         } else {

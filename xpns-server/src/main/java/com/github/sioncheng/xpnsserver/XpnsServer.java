@@ -52,7 +52,9 @@ public class XpnsServer implements ClientChannelEventListener {
     }
 
     public void stop() {
+        eventLoopGroupMasterForApi.shutdownGracefully();
         eventLoopGroupForApi.shutdownGracefully();
+        eventLoopGroupMaster.shutdownGracefully();
         eventLoopGroup.shutdownGracefully();
 
     }
@@ -60,8 +62,16 @@ public class XpnsServer implements ClientChannelEventListener {
 
     @Override
     public void clientChannelActive(ClientChannel clientChannel) {
-        if (clientChannelsCounter.incrementAndGet() > this.serverConfig.getMaxClients()) {
+        int clients = clientChannelsCounter.get();
+
+        if (clients >= this.serverConfig.getMaxClients()) {
+            logger.warn("reach max clients {} {}", clients, this.serverConfig.getMaxClients());
             clientChannel.shutdown();
+        } else {
+            if (logger.isInfoEnabled()) {
+                logger.info("client channel active {}", clients);
+            }
+            clientChannelsCounter.incrementAndGet();
         }
     }
 
@@ -70,10 +80,20 @@ public class XpnsServer implements ClientChannelEventListener {
         int i;
         if (StringUtils.isEmpty(clientChannel.getAcid())) {
             i = random.nextInt(this.clientCommandsList.size());
+            if (logger.isInfoEnabled()) {
+                logger.info("random dispatch command {} to {}", command.getSerialNumber(), i);
+            }
         } else {
             i = Math.abs(clientChannel.getAcid().hashCode()) % this.clientCommandsList.size();
+            if (logger.isInfoEnabled()) {
+                logger.info("dispatch command {} to {}", command.getSerialNumber(), i);
+            }
         }
-        this.clientCommandsList.get(i).add(new ClientCommand(command, clientChannel));
+        boolean b = this.clientCommandsList.get(i).add(new ClientCommand(command, clientChannel));
+        if (logger.isInfoEnabled()) {
+            logger.info("add command {} to {} result {}",
+                    command.getSerialNumber(), i, b);
+        }
     }
 
     @Override
@@ -81,6 +101,7 @@ public class XpnsServer implements ClientChannelEventListener {
         this.clientChannelsCounter.decrementAndGet();
         String acid = clientChannel.getAcid();
         if (StringUtils.isNotEmpty(acid)) {
+            this.clientChannels.remove(acid);
             this.sessionManager.removeClient(acid, this.serverConfig.getApiServer());
             Notification notification = this.sendingNotifications.remove(acid);
             if (notification != null) {
@@ -121,10 +142,12 @@ public class XpnsServer implements ClientChannelEventListener {
         this.queuingNotifications = new ConcurrentHashMap<>();
 
 
+        eventLoopGroupMaster = new NioEventLoopGroup(1);
         eventLoopGroup = new NioEventLoopGroup(this.serverConfig.getNettyEventLoopGroupThreadsForClient());
         serverBootstrap = new ServerBootstrap();
-        serverBootstrap.group(eventLoopGroup);
-        serverBootstrap.option(ChannelOption.SO_BACKLOG, 256);
+        serverBootstrap.group(eventLoopGroupMaster,eventLoopGroup);
+        serverBootstrap.option(ChannelOption.SO_REUSEADDR, true);
+        serverBootstrap.option(ChannelOption.SO_TIMEOUT, 360000);
         serverBootstrap.channel(NioServerSocketChannel.class);
         serverBootstrap.childHandler(new ClientChannelInitializer(this));
 
@@ -138,10 +161,11 @@ public class XpnsServer implements ClientChannelEventListener {
     private void startApiServer() throws InterruptedException {
         final XpnsServer xpnsServer = this;
 
+        this.eventLoopGroupMasterForApi = new NioEventLoopGroup(1);
         this.eventLoopGroupForApi = new NioEventLoopGroup(this.serverConfig.getNettyEventLoopGroupThreadsForApi());
 
         this.serverBootstrapForApi = new ServerBootstrap();
-        this.serverBootstrapForApi.group(this.eventLoopGroupForApi);
+        this.serverBootstrapForApi.group(this.eventLoopGroupMasterForApi, this.eventLoopGroupForApi);
         this.serverBootstrapForApi.option(ChannelOption.SO_BACKLOG, 64);
         this.serverBootstrapForApi.channel(NioServerSocketChannel.class);
         this.serverBootstrapForApi.childOption(ChannelOption.SO_KEEPALIVE, true);
@@ -183,7 +207,7 @@ public class XpnsServer implements ClientChannelEventListener {
                     workerThreadMethod(n);
                 }
             });
-            t.setDaemon(true);
+            //t.setDaemon(true);
             t.setName("xpns-server-worker-thread-" + i);
             this.serverWorkThreads.add(t);
             t.start();
@@ -191,6 +215,7 @@ public class XpnsServer implements ClientChannelEventListener {
     }
 
     private void workerThreadMethod(int i) {
+        int continueCount = 0;
         while (!stop) {
             ClientCommand clientCommand = this.clientCommandsList.get(i).poll();
             Notification notification = this.notificationTasksList.get(i).poll();
@@ -199,8 +224,20 @@ public class XpnsServer implements ClientChannelEventListener {
                 try {
                     Thread.sleep(10);
                 } catch (Exception ex) {}
+                continueCount++;
+
+                if (continueCount >= 6000) {
+                    if (logger.isInfoEnabled()) {
+                        logger.info("there is no work to do {} {}", i, Thread.currentThread().getName());
+                    }
+                    continueCount = 0;
+                }
 
                 continue;
+            }
+
+            if (logger.isInfoEnabled()) {
+                logger.info("there is work to do {} {}", i, Thread.currentThread().getName());
             }
 
             if (clientCommand != null) {
@@ -211,6 +248,7 @@ public class XpnsServer implements ClientChannelEventListener {
                 this.handleNotification(notification);
             }
         }
+        logger.info("exit worker thread method {} {}", i, Thread.currentThread().getName());
     }
 
     private void handleClientCommand(ClientCommand clientCommand) {
@@ -300,6 +338,13 @@ public class XpnsServer implements ClientChannelEventListener {
 
     private void handleLogin(JsonCommand jsonCommand, ClientChannel clientChannel) {
 
+        ClientChannel existedClientChannel = this.clientChannels.get(jsonCommand.getAcid());
+        if (existedClientChannel != null) {
+            logger.warn("existed client channel {}", jsonCommand.getAcid());
+            existedClientChannel.shutdown(false);
+            this.clientChannelInactive(existedClientChannel);
+        }
+
         try {
 
             clientChannel.setAcid(jsonCommand.getAcid());
@@ -356,8 +401,8 @@ public class XpnsServer implements ClientChannelEventListener {
 
         ClientChannel clientChannel = this.clientChannels.get(notification.getTo());
         if (clientChannel == null) {
-            this.notificationManager.notificationAck(notification, false);
             logger.warn("client does not exist {}", notification.getTo());
+            this.notificationManager.notificationAck(notification, false);
             return;
         }
 
@@ -430,9 +475,11 @@ public class XpnsServer implements ClientChannelEventListener {
     private SessionManager sessionManager;
     private KafkaNotificationManager notificationManager;
 
+    private NioEventLoopGroup eventLoopGroupMaster;
     private NioEventLoopGroup eventLoopGroup;
     private ServerBootstrap serverBootstrap;
 
+    private NioEventLoopGroup eventLoopGroupMasterForApi;
     private NioEventLoopGroup eventLoopGroupForApi;
     private ServerBootstrap serverBootstrapForApi;
 

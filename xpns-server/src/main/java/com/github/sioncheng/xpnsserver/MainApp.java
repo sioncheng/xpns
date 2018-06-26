@@ -1,6 +1,9 @@
 package com.github.sioncheng.xpnsserver;
 
 
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+
 public class MainApp {
 
     public static void main(String[] args) throws Exception {
@@ -39,6 +42,11 @@ public class MainApp {
 
         xpnsServer.start();
 
-        System.in.read();
+        new ScheduledThreadPoolExecutor(1).scheduleAtFixedRate(new Runnable() {
+            @Override
+            public void run() {
+                System.out.println("...");
+            }
+        }, 60, 60, TimeUnit.SECONDS);
     }
 }
