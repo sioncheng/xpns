@@ -101,19 +101,8 @@ public class XpnsServer implements ClientChannelEventListener {
         this.clientChannelsCounter.decrementAndGet();
         String acid = clientChannel.getAcid();
         if (StringUtils.isNotEmpty(acid)) {
-            this.clientChannels.remove(acid);
-            this.sessionManager.removeClient(acid, this.serverConfig.getApiServer());
-            Notification notification = this.sendingNotifications.remove(acid);
-            if (notification != null) {
-                notificationManager.notificationAck(notification, false);
-            }
-            ConcurrentLinkedQueue<Notification> queue = this.queuingNotifications.remove(acid);
-            if (queue != null && queue.size() > 0) {
-                for (Notification element :
-                        queue) {
-                    notificationManager.notificationAck(element, false);
-                }
-            }
+            int i = Math.abs(acid.hashCode()) % this.clientInactiveEventsList.size();
+            this.clientInactiveEventsList.get(i).add(clientChannel);
         }
 
         if (logger.isInfoEnabled()) {
@@ -124,6 +113,9 @@ public class XpnsServer implements ClientChannelEventListener {
     public void notificationIn(Notification notification) {
         ClientChannel clientChannel = this.clientChannels.get(notification.getTo());
         if (clientChannel == null) {
+            if (logger.isWarnEnabled()) {
+                logger.warn("client does not exists {}", notification.getTo());
+            }
             this.notificationManager.notificationAck(notification, false);
         } else {
             int i = Math.abs(notification.getTo().hashCode()) % this.notificationTasksList.size();
@@ -136,12 +128,6 @@ public class XpnsServer implements ClientChannelEventListener {
     }
 
     private void startClientServer() throws InterruptedException {
-        this.clientChannels = new ConcurrentHashMap<>();
-
-        this.sendingNotifications = new ConcurrentHashMap<>();
-        this.queuingNotifications = new ConcurrentHashMap<>();
-
-
         eventLoopGroupMaster = new NioEventLoopGroup(1);
         eventLoopGroup = new NioEventLoopGroup(this.serverConfig.getNettyEventLoopGroupThreadsForClient());
         serverBootstrap = new ServerBootstrap();
@@ -193,11 +179,17 @@ public class XpnsServer implements ClientChannelEventListener {
     }
 
     private void startWorkerThreads() {
+        this.clientChannels = new ConcurrentHashMap<>();
+        this.sendingNotifications = new ConcurrentHashMap<>();
+        this.queuingNotifications = new ConcurrentHashMap<>();
+
+        this.clientInactiveEventsList = new ArrayList<>(this.serverConfig.getWorkerThreads());
         this.clientCommandsList = new ArrayList<>(this.serverConfig.getWorkerThreads());
         this.notificationTasksList = new ArrayList<>(this.serverConfig.getWorkerThreads());
         this.serverWorkThreads = new ArrayList<>(this.serverConfig.getWorkerThreads());
 
         for (int i = 0 ; i < this.serverConfig.getWorkerThreads(); i++) {
+            this.clientInactiveEventsList.add(new ConcurrentLinkedQueue<>());
             this.clientCommandsList.add(new ConcurrentLinkedQueue<>());
             this.notificationTasksList.add(new ConcurrentLinkedQueue<>());
             final int n = i;
@@ -207,7 +199,7 @@ public class XpnsServer implements ClientChannelEventListener {
                     workerThreadMethod(n);
                 }
             });
-            //t.setDaemon(true);
+            t.setDaemon(true);
             t.setName("xpns-server-worker-thread-" + i);
             this.serverWorkThreads.add(t);
             t.start();
@@ -217,10 +209,11 @@ public class XpnsServer implements ClientChannelEventListener {
     private void workerThreadMethod(int i) {
         int continueCount = 0;
         while (!stop) {
+            ClientChannel clientChannel = this.clientInactiveEventsList.get(i).poll();
             ClientCommand clientCommand = this.clientCommandsList.get(i).poll();
             Notification notification = this.notificationTasksList.get(i).poll();
 
-            if (clientCommand == null && notification == null) {
+            if (clientChannel == null && clientCommand == null && notification == null) {
                 try {
                     Thread.sleep(10);
                 } catch (Exception ex) {}
@@ -240,6 +233,10 @@ public class XpnsServer implements ClientChannelEventListener {
                 logger.info("there is work to do {} {}", i, Thread.currentThread().getName());
             }
 
+            if (clientChannel != null) {
+                this.handleChannelInactive(clientChannel);
+            }
+
             if (clientCommand != null) {
                 this.handleClientCommand(clientCommand);
             }
@@ -249,6 +246,23 @@ public class XpnsServer implements ClientChannelEventListener {
             }
         }
         logger.info("exit worker thread method {} {}", i, Thread.currentThread().getName());
+    }
+
+    private void handleChannelInactive(ClientChannel clientChannel) {
+        String acid = clientChannel.getAcid();
+        this.clientChannels.remove(acid);
+        this.sessionManager.removeClient(acid, this.serverConfig.getApiServer());
+        Notification notification = this.sendingNotifications.remove(acid);
+        if (notification != null) {
+            notificationManager.notificationAck(notification, false);
+        }
+        ConcurrentLinkedQueue<Notification> queue = this.queuingNotifications.remove(acid);
+        if (queue != null && queue.size() > 0) {
+            for (Notification element :
+                    queue) {
+                notificationManager.notificationAck(element, false);
+            }
+        }
     }
 
     private void handleClientCommand(ClientCommand clientCommand) {
@@ -342,7 +356,7 @@ public class XpnsServer implements ClientChannelEventListener {
         if (existedClientChannel != null) {
             logger.warn("existed client channel {}", jsonCommand.getAcid());
             existedClientChannel.shutdown(false);
-            this.clientChannelInactive(existedClientChannel);
+            this.handleChannelInactive(existedClientChannel);
         }
 
         try {
@@ -486,6 +500,7 @@ public class XpnsServer implements ClientChannelEventListener {
 
     private ConcurrentHashMap<String, ClientChannel> clientChannels;
 
+    private List<ConcurrentLinkedQueue<ClientChannel>> clientInactiveEventsList;
     private List<ConcurrentLinkedQueue<ClientCommand>> clientCommandsList;
     private List<ConcurrentLinkedQueue<Notification>> notificationTasksList;
     private List<Thread> serverWorkThreads;
