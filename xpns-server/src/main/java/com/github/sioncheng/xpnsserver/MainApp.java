@@ -31,7 +31,7 @@ public class MainApp {
         xpnsServerConfig.setApiServer(ServerProperties.getString("server.api.host"));
         xpnsServerConfig.setNettyEventLoopGroupThreadsForClient(ServerProperties.getInt("server.client.netty.threads"));
         xpnsServerConfig.setNettyEventLoopGroupThreadsForApi(ServerProperties.getInt("server.api.netty.threads"));
-
+        xpnsServerConfig.setWorkerThreads(ServerProperties.getInt("server.worker.threads"));
 
         XpnsServer xpnsServer = new XpnsServer(xpnsServerConfig,
                 redisSessionManager,

@@ -10,12 +10,14 @@ public class XpnsServerConfig {
                             int maxClients,
                             String apiServer,
                             int apiPort,
+                            int workerThreads,
                             int nettyEventLoopGroupThreadsForClient,
                             int nettyEventLoopGroupThreadsForApi) {
         this.clientPort = port;
         this.maxClients = maxClients;
         this.apiServer = apiServer;
         this.apiPort = apiPort;
+        this.workerThreads = workerThreads;
         this.nettyEventLoopGroupThreadsForClient = nettyEventLoopGroupThreadsForClient;
         this.nettyEventLoopGroupThreadsForApi = nettyEventLoopGroupThreadsForApi;
     }
@@ -44,20 +46,28 @@ public class XpnsServerConfig {
         this.apiServer = apiServer;
     }
 
-    public int getNettyEventLoopGroupThreadsForClient() {
-        return nettyEventLoopGroupThreadsForClient;
-    }
-
-    public void setNettyEventLoopGroupThreadsForClient(int nettyEventLoopGroupThreadsForClient) {
-        this.nettyEventLoopGroupThreadsForClient = nettyEventLoopGroupThreadsForClient;
-    }
-
     public int getApiPort() {
         return apiPort;
     }
 
     public void setApiPort(int apiPort) {
         this.apiPort = apiPort;
+    }
+
+    public int getWorkerThreads() {
+        return workerThreads;
+    }
+
+    public void setWorkerThreads(int workerThreads) {
+        this.workerThreads = workerThreads;
+    }
+
+    public int getNettyEventLoopGroupThreadsForClient() {
+        return nettyEventLoopGroupThreadsForClient;
+    }
+
+    public void setNettyEventLoopGroupThreadsForClient(int nettyEventLoopGroupThreadsForClient) {
+        this.nettyEventLoopGroupThreadsForClient = nettyEventLoopGroupThreadsForClient;
     }
 
     public int getNettyEventLoopGroupThreadsForApi() {
@@ -72,6 +82,7 @@ public class XpnsServerConfig {
     private int clientPort;
     private String apiServer;
     private int apiPort;
+    private int workerThreads;
     private int nettyEventLoopGroupThreadsForClient;
     private int nettyEventLoopGroupThreadsForApi;
 }

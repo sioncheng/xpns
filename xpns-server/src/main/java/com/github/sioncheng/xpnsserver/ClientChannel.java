@@ -47,6 +47,10 @@ public class ClientChannel extends SimpleChannelInboundHandler<Command> {
             this.clientChannelEventListener.clientChannelActive(this);
         }
 
+        if (logger.isInfoEnabled()) {
+            logger.info("channel active {}", ctx.channel().remoteAddress().toString());
+        }
+
         super.channelActive(ctx);
     }
 
@@ -55,6 +59,10 @@ public class ClientChannel extends SimpleChannelInboundHandler<Command> {
 
         if (this.clientChannelEventListener != null) {
             this.clientChannelEventListener.clientChannelInactive(this);
+        }
+
+        if (logger.isInfoEnabled()) {
+            logger.info("channel inactive {}", ctx.channel().remoteAddress().toString());
         }
 
         super.channelInactive(ctx);

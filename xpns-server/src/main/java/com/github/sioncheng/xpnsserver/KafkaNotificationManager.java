@@ -5,6 +5,8 @@ import com.github.sioncheng.xpns.common.client.Notification;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Arrays;
 import java.util.Properties;
@@ -17,7 +19,9 @@ public class KafkaNotificationManager  {
     }
 
     public void notificationAck(Notification notification, boolean success) {
-
+        if (logger.isInfoEnabled()) {
+            logger.info("notification ack {} {}", success, notification.toJSONObject().toJSONString());
+        }
     }
 
 
@@ -73,4 +77,6 @@ public class KafkaNotificationManager  {
     KafkaNotificationConsumerConfig consumerConfig;
 
     private KafkaConsumer<String, String> consumer;
+
+    private Logger logger = LoggerFactory.getLogger(KafkaNotificationManager.class);
 }

@@ -22,6 +22,9 @@ import org.slf4j.LoggerFactory;
 
 import java.io.UnsupportedEncodingException;
 import java.net.InetSocketAddress;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -43,6 +46,8 @@ public class XpnsServer implements ClientChannelEventListener {
 
         startApiServer();
 
+        startWorkerThreads();
+
         return true;
     }
 
@@ -62,7 +67,13 @@ public class XpnsServer implements ClientChannelEventListener {
 
     @Override
     public void commandIn(Command command, ClientChannel clientChannel) {
-        this.clientCommands.add(new ClientCommand(command, clientChannel));
+        int i;
+        if (StringUtils.isEmpty(clientChannel.getAcid())) {
+            i = random.nextInt(this.clientCommandsList.size());
+        } else {
+            i = Math.abs(clientChannel.getAcid().hashCode()) % this.clientCommandsList.size();
+        }
+        this.clientCommandsList.get(i).add(new ClientCommand(command, clientChannel));
     }
 
     @Override
@@ -71,8 +82,21 @@ public class XpnsServer implements ClientChannelEventListener {
         String acid = clientChannel.getAcid();
         if (StringUtils.isNotEmpty(acid)) {
             this.sessionManager.removeClient(acid, this.serverConfig.getApiServer());
-            this.sendingNotifications.remove(acid);
-            this.queuingNotifications.remove(acid);
+            Notification notification = this.sendingNotifications.remove(acid);
+            if (notification != null) {
+                notificationManager.notificationAck(notification, false);
+            }
+            ConcurrentLinkedQueue<Notification> queue = this.queuingNotifications.remove(acid);
+            if (queue != null && queue.size() > 0) {
+                for (Notification element :
+                        queue) {
+                    notificationManager.notificationAck(element, false);
+                }
+            }
+        }
+
+        if (logger.isInfoEnabled()) {
+            logger.info("client close {}", acid);
         }
     }
 
@@ -81,7 +105,8 @@ public class XpnsServer implements ClientChannelEventListener {
         if (clientChannel == null) {
             this.notificationManager.notificationAck(notification, false);
         } else {
-            this.notificationTasks.add(notification);
+            int i = Math.abs(notification.getTo().hashCode()) % this.notificationTasksList.size();
+            this.notificationTasksList.get(i).add(notification);
         }
     }
 
@@ -91,26 +116,10 @@ public class XpnsServer implements ClientChannelEventListener {
 
     private void startClientServer() throws InterruptedException {
         this.clientChannels = new ConcurrentHashMap<>();
-        this.clientCommands = new ConcurrentLinkedQueue<>();
-        this.handleClientCommandsThread = new Thread(new Runnable() {
-            @Override
-            public void run() {
-                handleClientCommand();
-            }
-        });
-        this.handleClientCommandsThread.start();
 
-        this.notificationTasks = new ConcurrentLinkedQueue<>();
         this.sendingNotifications = new ConcurrentHashMap<>();
         this.queuingNotifications = new ConcurrentHashMap<>();
 
-        this.handleNotificationThread = new Thread(new Runnable() {
-            @Override
-            public void run() {
-                handleNotification();
-            }
-        });
-        this.handleNotificationThread.start();
 
         eventLoopGroup = new NioEventLoopGroup(this.serverConfig.getNettyEventLoopGroupThreadsForClient());
         serverBootstrap = new ServerBootstrap();
@@ -120,6 +129,10 @@ public class XpnsServer implements ClientChannelEventListener {
         serverBootstrap.childHandler(new ClientChannelInitializer(this));
 
         serverBootstrap.bind(this.serverConfig.getClientPort()).sync();
+
+        if (logger.isInfoEnabled()) {
+            logger.info("start client server at {}", this.serverConfig.getClientPort());
+        }
     }
 
     private void startApiServer() throws InterruptedException {
@@ -147,39 +160,81 @@ public class XpnsServer implements ClientChannelEventListener {
                 this.serverConfig.getApiPort());
         this.serverBootstrapForApi.bind(inetSocketAddress).sync();
 
+        if (logger.isInfoEnabled()) {
+            logger.info("start api server at {}:{}",
+                    this.serverConfig.getApiServer(),
+                    this.serverConfig.getApiPort());
+        }
+
     }
 
-    private void handleClientCommand() {
+    private void startWorkerThreads() {
+        this.clientCommandsList = new ArrayList<>(this.serverConfig.getWorkerThreads());
+        this.notificationTasksList = new ArrayList<>(this.serverConfig.getWorkerThreads());
+        this.serverWorkThreads = new ArrayList<>(this.serverConfig.getWorkerThreads());
+
+        for (int i = 0 ; i < this.serverConfig.getWorkerThreads(); i++) {
+            this.clientCommandsList.add(new ConcurrentLinkedQueue<>());
+            this.notificationTasksList.add(new ConcurrentLinkedQueue<>());
+            final int n = i;
+            Thread t = new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    workerThreadMethod(n);
+                }
+            });
+            t.setDaemon(true);
+            t.setName("xpns-server-worker-thread-" + i);
+            this.serverWorkThreads.add(t);
+            t.start();
+        }
+    }
+
+    private void workerThreadMethod(int i) {
         while (!stop) {
-            ClientCommand clientCommand = this.clientCommands.poll();
-            if (clientCommand == null) {
+            ClientCommand clientCommand = this.clientCommandsList.get(i).poll();
+            Notification notification = this.notificationTasksList.get(i).poll();
+
+            if (clientCommand == null && notification == null) {
                 try {
                     Thread.sleep(10);
-                } catch (InterruptedException ie) { }
+                } catch (Exception ex) {}
 
                 continue;
             }
 
-            if (clientCommand.command.getSerializationType() != Command.JSON_SERIALIZATION) {
-                clientCommand.clientChannel.shutdown();
-                continue;
+            if (clientCommand != null) {
+                this.handleClientCommand(clientCommand);
             }
 
-            switch (clientCommand.command.getCommandType()) {
-                case Command.HEARTBEAT:
-                    this.handleHeartbeat(clientCommand);
-                    break;
-                case Command.REQUEST:
-                    this.handleRequest(clientCommand);
-                    break;
-                case Command.RESPONSE:
-                    this.handleResponse(clientCommand);
-                    break;
-                default:
-                    clientCommand.clientChannel.shutdown();
-                    break;
+            if (notification != null) {
+                this.handleNotification(notification);
             }
         }
+    }
+
+    private void handleClientCommand(ClientCommand clientCommand) {
+
+        if (clientCommand.command.getSerializationType() != Command.JSON_SERIALIZATION) {
+            clientCommand.clientChannel.shutdown();
+            return;
+        }
+
+        switch (clientCommand.command.getCommandType()) {
+            case Command.HEARTBEAT:
+                this.handleHeartbeat(clientCommand);
+                break;
+            case Command.REQUEST:
+                this.handleRequest(clientCommand);
+                break;
+            case Command.RESPONSE:
+                this.handleResponse(clientCommand);
+                break;
+            default:
+                clientCommand.clientChannel.shutdown();
+                break;
+        }
+
     }
 
     private void handleHeartbeat(ClientCommand clientCommand) {
@@ -264,6 +319,10 @@ public class XpnsServer implements ClientChannelEventListener {
 
             this.sessionManager.putClient(jsonCommand.getAcid(), this.serverConfig.getApiServer());
             this.clientChannels.put(jsonCommand.getAcid(), clientChannel);
+
+            if (logger.isInfoEnabled()) {
+                logger.info("client login {}", jsonCommand.getAcid());
+            }
         } catch (UnsupportedEncodingException ue) {
             logger.warn("encode command error", ue);
 
@@ -284,50 +343,55 @@ public class XpnsServer implements ClientChannelEventListener {
 
         ConcurrentLinkedQueue<Notification> queue = this.queuingNotifications.get(acid);
         if (queue != null && queue.size() > 0) {
-            this.notificationTasks.add(queue.poll());
+            int i = Math.abs(acid.hashCode()) % this.notificationTasksList.size();
+            this.notificationTasksList.get(i).add(queue.poll());
+        }
+
+        if (logger.isInfoEnabled()) {
+            logger.info("notification ack {}", notification.toJSONObject().toJSONString());
         }
     }
 
-    private void handleNotification() {
-        while (!stop) {
-            Notification notification = this.notificationTasks.poll();
+    private void handleNotification(Notification notification) {
 
-            if (notification == null) {
-                try {
-                    Thread.sleep(10);
-                } catch (Exception ex){}
-
-                continue;
-            }
-
-            ClientChannel clientChannel = this.clientChannels.get(notification.getTo());
-            if (clientChannel == null) {
-                this.notificationManager.notificationAck(notification, false);
-                continue;
-            }
-
-            if (sendingNotifications.containsKey(clientChannel.getAcid())) {
-                ConcurrentLinkedQueue<Notification> queue;
-
-                if (queuingNotifications.containsKey(clientChannel.getAcid())) {
-                    queue = queuingNotifications.get(clientChannel.getAcid());
-                    if (queue.size() > 10) {
-                        this.notificationManager.notificationAck(notification, false);
-
-                        continue;
-                    }
-                } else {
-                    queue = new ConcurrentLinkedQueue<>();
-                    this.queuingNotifications.put(clientChannel.getAcid(), queue);
-                }
-
-                queue.add(notification);
-                continue;
-
-            }
-
-            realSendNotification(notification, clientChannel);
+        ClientChannel clientChannel = this.clientChannels.get(notification.getTo());
+        if (clientChannel == null) {
+            this.notificationManager.notificationAck(notification, false);
+            logger.warn("client does not exist {}", notification.getTo());
+            return;
         }
+
+        if (sendingNotifications.containsKey(clientChannel.getAcid())) {
+            ConcurrentLinkedQueue<Notification> queue;
+
+            if (queuingNotifications.containsKey(clientChannel.getAcid())) {
+                queue = queuingNotifications.get(clientChannel.getAcid());
+                if (queue.size() > 10) {
+                    this.notificationManager.notificationAck(notification, false);
+
+                    if (logger.isInfoEnabled()) {
+                        logger.info("client queue is full {}", notification.getTo());
+                    }
+
+                    return;
+                }
+            } else {
+                queue = new ConcurrentLinkedQueue<>();
+                this.queuingNotifications.put(clientChannel.getAcid(), queue);
+            }
+
+            queue.add(notification);
+
+            if (logger.isInfoEnabled()) {
+                logger.info("queue notification for client {}", notification.getTo());
+            }
+
+            return;
+
+        }
+
+        realSendNotification(notification, clientChannel);
+
     }
 
     private void realSendNotification(Notification notification, ClientChannel clientChannel) {
@@ -353,6 +417,10 @@ public class XpnsServer implements ClientChannelEventListener {
 
             this.sendingNotifications.put(notification.getTo(), notification);
 
+            if (logger.isInfoEnabled()) {
+                logger.info("real send notification {}", notification.toJSONObject().toJSONString());
+            }
+
         } catch (UnsupportedEncodingException ue) {
             logger.warn("encode notification error", ue);
         }
@@ -371,11 +439,10 @@ public class XpnsServer implements ClientChannelEventListener {
 
     private ConcurrentHashMap<String, ClientChannel> clientChannels;
 
-    private ConcurrentLinkedQueue<ClientCommand> clientCommands;
-    private Thread handleClientCommandsThread;
+    private List<ConcurrentLinkedQueue<ClientCommand>> clientCommandsList;
+    private List<ConcurrentLinkedQueue<Notification>> notificationTasksList;
+    private List<Thread> serverWorkThreads;
 
-    private ConcurrentLinkedQueue<Notification> notificationTasks;
-    private Thread handleNotificationThread;
 
     private ConcurrentHashMap<String, Notification> sendingNotifications;
     private ConcurrentHashMap<String, ConcurrentLinkedQueue<Notification>> queuingNotifications;
@@ -385,6 +452,7 @@ public class XpnsServer implements ClientChannelEventListener {
     private volatile boolean stop;
 
     private static final Logger logger = LoggerFactory.getLogger(XpnsServer.class);
+    private static Random random = new Random();
 
 
     private class ClientCommand {
