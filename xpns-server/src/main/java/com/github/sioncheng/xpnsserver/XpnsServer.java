@@ -217,6 +217,7 @@ public class XpnsServer implements ClientChannelEventListener {
                 try {
                     Thread.sleep(10);
                 } catch (Exception ex) {}
+
                 continueCount++;
 
                 if (continueCount >= 6000) {
@@ -228,6 +229,7 @@ public class XpnsServer implements ClientChannelEventListener {
 
                 continue;
             }
+            continueCount = 0;
 
             if (logger.isInfoEnabled()) {
                 logger.info("there is work to do {} {}", i, Thread.currentThread().getName());
