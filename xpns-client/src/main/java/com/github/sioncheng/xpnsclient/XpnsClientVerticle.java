@@ -1,5 +1,6 @@
 package com.github.sioncheng.xpnsclient;
 
+import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.github.sioncheng.xpns.common.protocol.Command;
 import com.github.sioncheng.xpns.common.protocol.CommandUtil;
@@ -16,12 +17,14 @@ import java.util.List;
 
 public class XpnsClientVerticle extends AbstractVerticle {
 
-    public XpnsClientVerticle(String clientId, NetSocket netSocket) {
+    public XpnsClientVerticle(String clientId, NetSocket netSocket, String clientActivationEventAddress) {
         this.commandCodec = new CommandCodec();
         this.status = NEW;
         this.clientId = clientId;
         this.netSocket = netSocket;
         this.lastReadWriteTime = 0;
+        this.heatBeatTimerId = 0L;
+        this.clientActivationEventAddress = clientActivationEventAddress;
     }
 
     @Override
@@ -35,16 +38,29 @@ public class XpnsClientVerticle extends AbstractVerticle {
         login();
     }
 
+    @Override
+    public void stop() throws Exception {
+        if (this.heatBeatTimerId > 0) {
+            vertx.cancelTimer(this.heatBeatTimerId);
+        }
+
+        if (logger.isInfoEnabled()) {
+            logger.info(String.format("xpns client verticle stop %s", clientId));
+        }
+
+        super.stop();
+    }
+
     private void socketCloseHandler(Void v) {
         logger.warn("socket closed");
-        vertx.eventBus().send(ClientActivationEvent.EVENT_ADDRESS,
-                new ClientActivationEvent(clientId, ClientActivationEvent.CLOSE_EVENT).toJSONObject().toJSONString());
+        ClientActivationEvent event = new ClientActivationEvent(clientId, ClientActivationEvent.CLOSE_EVENT);
+        vertx.eventBus().send(clientActivationEventAddress, JSON.toJSONString(event));
     }
 
     private void socketExceptionHandler(Throwable t) {
         logger.warn("socket exception", t);
-        vertx.eventBus().send(ClientActivationEvent.EVENT_ADDRESS,
-                new ClientActivationEvent(clientId, ClientActivationEvent.CLOSE_EVENT).toJSONObject().toJSONString());
+        ClientActivationEvent event = new ClientActivationEvent(clientId, ClientActivationEvent.CLOSE_EVENT);
+        vertx.eventBus().send(clientActivationEventAddress, JSON.toJSONString(event));
     }
 
     private void socketHandler(Buffer buffer) {
@@ -65,18 +81,21 @@ public class XpnsClientVerticle extends AbstractVerticle {
                         logger.info(String.format("logon %s", clientId));
                     }
                     this.status = LOGON;
-                    vertx.eventBus().send(ClientActivationEvent.EVENT_ADDRESS,
-                            new ClientActivationEvent(clientId, ClientActivationEvent.LOGON_EVENT).toJSONObject().toJSONString());
 
-                    vertx.setPeriodic(300000, this::handlePeriodic);
+                    ClientActivationEvent logonEvent = new ClientActivationEvent(clientId, ClientActivationEvent.LOGON_EVENT);
+                    vertx.eventBus().send(clientActivationEventAddress, JSON.toJSONString(logonEvent));
+
+                    this.heatBeatTimerId = vertx.setPeriodic(200000, this::handlePeriodic);
                     break;
                 case JsonCommand.NOTIFICATION_CODE:
                     JSONObject jsonObject = jsonCommand.getCommandObject().getJSONObject(JsonCommand.NOTIFICATION);
                     if (logger.isInfoEnabled()) {
                         logger.info(String.format("notification %s", jsonObject.toJSONString()));
                     }
-                    vertx.eventBus().send(ClientActivationEvent.EVENT_ADDRESS,
-                            new ClientActivationEvent(clientId, ClientActivationEvent.NOTIFICATION_EVENT).toJSONObject().toJSONString());
+
+                    ClientActivationEvent notificationEvent = new ClientActivationEvent(clientId, ClientActivationEvent.NOTIFICATION_EVENT);
+                    vertx.eventBus().send(clientActivationEventAddress, JSON.toJSONString(notificationEvent));
+
                     this.handelNotification(jsonCommand);
                     break;
                 case JsonCommand.HEART_BEAT_CODE:
@@ -110,6 +129,7 @@ public class XpnsClientVerticle extends AbstractVerticle {
         if (System.currentTimeMillis() - lastReadWriteTime >= l) {
             JSONObject jsonObject = new JSONObject();
             jsonObject.put(JsonCommand.ACID, this.clientId);
+            jsonObject.put(JsonCommand.COMMAND_CODE, JsonCommand.HEART_BEAT_CODE);
             JsonCommand jsonCommand = JsonCommand.create(Command.HEARTBEAT, jsonObject);
 
             writeCommand(jsonCommand);
@@ -151,6 +171,8 @@ public class XpnsClientVerticle extends AbstractVerticle {
     private NetSocket netSocket;
     private long lastReadWriteTime;
     private CommandCodec commandCodec;
+    private long heatBeatTimerId;
+    private String clientActivationEventAddress;
 
     private static final int NEW = 0;
     private static final int LOGON = 1;

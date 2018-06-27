@@ -231,10 +231,6 @@ public class XpnsServer implements ClientChannelEventListener {
             }
             continueCount = 0;
 
-            if (logger.isInfoEnabled()) {
-                logger.info("there is work to do {} {}", i, Thread.currentThread().getName());
-            }
-
             if (clientChannel != null) {
                 this.handleChannelInactive(clientChannel);
             }

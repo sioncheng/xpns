@@ -9,6 +9,9 @@ import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.core.net.NetClient;
 import io.vertx.core.net.NetSocket;
+import org.apache.commons.lang3.StringUtils;
+
+import java.util.HashMap;
 
 public class XpnsClientsVerticle extends AbstractVerticle {
 
@@ -22,13 +25,25 @@ public class XpnsClientsVerticle extends AbstractVerticle {
         this.remoteHost = remoteHost;
         this.remotePort = remotePort;
         this.connected = 0;
+        this.deployedClients = new HashMap<>();
+        this.clientDeploymentEventAddress = String.format("%s_%d_%d_%d",
+                ClientDeploymentEvent.EVENT_ADDRESS,
+                appId,
+                fromId,
+                toId);
+        this.clientActivationEventAddress = String.format("%s_%d_%d_%d",
+                ClientActivationEvent.EVENT_ADDRESS,
+                appId,
+                fromId,
+                toId);
     }
 
     @Override
     public void start() {
         //super.start();
 
-        vertx.eventBus().consumer(ClientActivationEvent.EVENT_ADDRESS, this::clientActivationEventHandler);
+        vertx.eventBus().consumer(clientDeploymentEventAddress, this::clientDeploymentEventHandler);
+        vertx.eventBus().consumer(clientActivationEventAddress, this::clientActivationEventHandler);
 
         startConnections();
     }
@@ -48,10 +63,33 @@ public class XpnsClientsVerticle extends AbstractVerticle {
                 }
                 break;
             case ClientActivationEvent.CLOSE_EVENT:
+                String acid = event.getAcid();
                 if (logger.isInfoEnabled()) {
-                    logger.info(String.format("close event %s", event.getAcid()));
+                    logger.info(String.format("close event %s", acid));
+                }
+
+                String verticleId = this.deployedClients.remove(acid);
+                if (StringUtils.isNotEmpty(verticleId)) {
+                    vertx.undeploy(verticleId, result -> {
+                        if (logger.isInfoEnabled()) {
+                            logger.info(String.format("undepoy xpns client verticle %s %s %s"
+                                    , Boolean.toString(result.succeeded()), acid, verticleId));
+                        }
+                    });
+                } else {
+                    logger.warn(String.format("cant find deployed client verticle for %s", acid));
                 }
                 break;
+        }
+    }
+
+    private void clientDeploymentEventHandler(Message<String> msg) {
+        ClientDeploymentEvent event = JSON.parseObject(msg.body(), ClientDeploymentEvent.class);
+        this.deployedClients.put(event.getAcid(), event.getVerticleId());
+
+        if (logger.isInfoEnabled()) {
+            logger.info(String.format("client deployment event %s %s",
+                    event.getAcid(), event.getVerticleId()));
         }
     }
 
@@ -66,9 +104,24 @@ public class XpnsClientsVerticle extends AbstractVerticle {
                     }
 
                     connected++;
+
+                    String clientId = generateClientId(connected);
+
                     XpnsClientVerticle clientVerticle =
-                            new XpnsClientVerticle(generateClientId(connected), netSocketAsyncResult.result());
-                    vertx.deployVerticle(clientVerticle);
+                            new XpnsClientVerticle(clientId,
+                                    netSocketAsyncResult.result(),
+                                    clientActivationEventAddress);
+
+                    vertx.deployVerticle(clientVerticle, deployResult -> {
+                        if (deployResult.succeeded()) {
+                            ClientDeploymentEvent event =
+                                    new ClientDeploymentEvent(clientId, deployResult.result());
+                            vertx.eventBus().send(clientDeploymentEventAddress, JSON.toJSONString(event));
+                        } else {
+                            ///
+                            logger.warn(String.format("deploy xpns client verticle failure %s", clientId));
+                        }
+                    });
                 } else {
                     //
                     logger.warn("connect to remote failure");
@@ -111,5 +164,9 @@ public class XpnsClientsVerticle extends AbstractVerticle {
     private int remotePort;
 
     private int connected;
+    private HashMap<String, String> deployedClients;
+    private String clientDeploymentEventAddress;
+    private String clientActivationEventAddress;
+
     private Logger logger = LoggerFactory.getLogger(XpnsClientVerticle.class);
 }

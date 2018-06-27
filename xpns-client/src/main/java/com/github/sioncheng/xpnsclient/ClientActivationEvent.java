@@ -1,7 +1,5 @@
 package com.github.sioncheng.xpnsclient;
 
-import com.alibaba.fastjson.JSONObject;
-
 public class ClientActivationEvent {
 
     public static final String EVENT_ADDRESS = "client.activation";
@@ -31,19 +29,6 @@ public class ClientActivationEvent {
 
     public void setEventType(int eventType) {
         this.eventType = eventType;
-    }
-
-    public JSONObject toJSONObject() {
-        JSONObject jsonObject = new JSONObject();
-        jsonObject.put("acid", this.acid);
-        jsonObject.put("eventType", this.eventType);
-
-        return jsonObject;
-    }
-
-    public void fromJSONObject(JSONObject jsonObject) {
-        this.setAcid(jsonObject.getString("acid"));
-        this.setEventType(jsonObject.getInteger("eventType"));
     }
 
     private String acid;
