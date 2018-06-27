@@ -22,11 +22,11 @@ public class MainApp {
             vertx.deployVerticle(verticle);
         }
 
-        /*
+
         for (int i = 0 ; i < 2; i++) {
             ApiServerVerticle apiServerVerticle = new ApiServerVerticle(i,9090, "0.0.0.0");
             vertx.deployVerticle(apiServerVerticle);
-        }*/
+        }
 
         vertx.eventBus().consumer(NotificationEventAddressBroadcast.EVENT_ADDRESS, msg -> {
             String msgBody = (String)msg.body();
@@ -39,18 +39,6 @@ public class MainApp {
                 clientNotificationEventAddressMap.remove(neab.getAcid());
             }
         });
-
-
-        System.in.read();
-
-        Notification notification = new Notification();
-        notification.setTo("1_aaaaaaaaaa0000000001");
-        notification.setTitle("title");
-        notification.setBody("body");
-        notification.setExt(new JSONObject());
-
-        String eventAddress = clientNotificationEventAddressMap.get("1_aaaaaaaaaa0000000001");
-        vertx.eventBus().send(eventAddress, JSON.toJSONString(notification));
 
         System.in.read();
     }
