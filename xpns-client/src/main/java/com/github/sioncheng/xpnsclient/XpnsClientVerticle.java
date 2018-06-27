@@ -40,9 +40,10 @@ public class XpnsClientVerticle extends AbstractVerticle {
 
     @Override
     public void stop() throws Exception {
-        if (this.heatBeatTimerId > 0) {
-            vertx.cancelTimer(this.heatBeatTimerId);
+        if (!vertx.cancelTimer(this.heatBeatTimerId)) {
+            logger.warn("unable to cancel timer %d of %s", this.heatBeatTimerId, this.clientId);
         }
+
 
         if (logger.isInfoEnabled()) {
             logger.info(String.format("xpns client verticle stop %s", clientId));
