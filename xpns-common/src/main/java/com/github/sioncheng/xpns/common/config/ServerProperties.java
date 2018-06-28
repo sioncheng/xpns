@@ -1,4 +1,4 @@
-package com.github.sioncheng.xpnsserver;
+package com.github.sioncheng.xpns.common.config;
 
 import org.apache.commons.lang3.StringUtils;
 

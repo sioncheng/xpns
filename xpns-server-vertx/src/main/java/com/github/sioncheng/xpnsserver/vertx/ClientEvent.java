@@ -4,7 +4,7 @@ import com.alibaba.fastjson.JSONObject;
 
 public class ClientEvent {
 
-    public static final String EVENT_ADDRESS = "client.event";
+    public static final String EVENT_ADDRESS_PREFIX = "client.event";
 
     public static final int START = 1;
     public static final int LOGON = 2;
@@ -12,6 +12,7 @@ public class ClientEvent {
     public static final int HEART_BEAT = 4;
     public static final int STOP = 5;
     public static final int SOCKET_CLOSE = 6;
+    public static final int LOGON_FOWARD = 7;
 
     public ClientEvent() {}
 
@@ -23,6 +24,16 @@ public class ClientEvent {
         this.acid = acid;
         this.deploymentId = deploymentId;
         this.commandObject = commandObject;
+    }
+
+    public ClientEvent clone() {
+        ClientEvent clientEvent = new ClientEvent();
+        clientEvent.setEventType(this.getEventType());
+        clientEvent.setAcid(this.getAcid());
+        clientEvent.setDeploymentId(this.getDeploymentId());
+        clientEvent.setCommandObject(this.getCommandObject());
+
+        return clientEvent;
     }
 
     public int getEventType() {

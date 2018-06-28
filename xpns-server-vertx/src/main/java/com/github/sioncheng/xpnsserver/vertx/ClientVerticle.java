@@ -52,6 +52,12 @@ public class ClientVerticle extends AbstractVerticle {
 
     @Override
     public void stop() throws Exception {
+
+        if (this.netSocket != null) {
+            this.netSocket.close();
+            this.netSocket = null;
+        }
+
         ClientEvent event = new ClientEvent();
         event.setAcid(this.acid);
         event.setDeploymentId(this.deploymentID());
@@ -91,6 +97,13 @@ public class ClientVerticle extends AbstractVerticle {
 
         if (logger.isInfoEnabled()) {
             logger.info(String.format("socket closed %s", this.acid));
+        }
+
+        if (this.netSocket == null) {
+            if (logger.isInfoEnabled()) {
+                logger.info("un deploy and stop");
+                return;
+            }
         }
 
         ClientEvent event = new ClientEvent();

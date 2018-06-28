@@ -3,6 +3,7 @@ package com.github.sioncheng.xpnsserver.vertx;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.github.sioncheng.xpns.common.client.Notification;
+import com.github.sioncheng.xpns.common.client.SessionInfo;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.eventbus.Message;
@@ -11,6 +12,8 @@ import io.vertx.core.http.HttpServerRequest;
 import io.vertx.core.http.HttpServerResponse;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
+import io.vertx.redis.RedisClient;
+import io.vertx.redis.RedisOptions;
 import org.apache.commons.lang3.StringUtils;
 
 import java.util.HashMap;
@@ -18,15 +21,18 @@ import java.util.UUID;
 
 public class ApiServerVerticle extends AbstractVerticle {
 
-    public ApiServerVerticle(int id, int port, String host) {
+    public ApiServerVerticle(int id, int port, String host, RedisOptions redisOptions) {
         this.id = id;
         this.port = port;
         this.host = host;
+        this.redisOptions = redisOptions;
         this.clientEventAddressMap = new HashMap<>();
     }
 
     @Override
     public void start() throws Exception {
+
+        this.redisClient = RedisClient.create(vertx, this.redisOptions);
 
         httpServer = vertx.createHttpServer();
         httpServer.requestHandler(this::httpRequestHandler);
@@ -43,8 +49,6 @@ public class ApiServerVerticle extends AbstractVerticle {
 
     @Override
     public void stop() throws Exception {
-
-
         super.stop();
     }
 
@@ -52,7 +56,7 @@ public class ApiServerVerticle extends AbstractVerticle {
         String url = request.uri();
         if ("/notification".equals(url)) {
             this.handelNotification(request);
-        } else if ("client".equals(url)) {
+        } else if ("/client".equals(url)) {
             this.handleClient(request);
         } else {
             this.handleUnknown(request);
@@ -67,14 +71,16 @@ public class ApiServerVerticle extends AbstractVerticle {
             String uuid = (UUID.randomUUID()).toString();
             notification.setUniqId(uuid);
 
+            JSONObject responseJson = new JSONObject();
+            responseJson.put("messageId", notification.getUniqId());
+
             String targetEventAddress = this.clientEventAddressMap.get(notification.getTo());
             if (StringUtils.isNotEmpty(targetEventAddress)) {
                 vertx.eventBus().send(targetEventAddress, JSON.toJSONString(notification));
+                responseJson.put("result", "ok");
+            } else {
+                responseJson.put("result", "error");
             }
-
-            JSONObject responseJson = new JSONObject();
-            responseJson.put("result", "ok");
-            responseJson.put("messageId", notification.getUniqId());
 
             this.writeResponse(request.response(), responseJson);
 
@@ -82,11 +88,35 @@ public class ApiServerVerticle extends AbstractVerticle {
     }
 
     private void handleClient(HttpServerRequest request) {
+        request.bodyHandler(buffer -> {
+           String s = new String(buffer.getBytes());
+           JSONObject jsonObject = JSON.parseObject(s);
 
+           String onlineKey = RedisHelper.generateOnlineKey(jsonObject.getString("acid"));
+           this.redisClient.get(onlineKey, result -> {
+               SessionInfo sessionInfo = null;
+               if (result.succeeded()) {
+                  sessionInfo = JSON.parseObject(result.result(), SessionInfo.class);
+               }
+
+               JSONObject responseJson = new JSONObject();
+               if (sessionInfo != null) {
+                   responseJson.put("result", "ok");
+               } else {
+                   responseJson.put("result", "error");
+               }
+               responseJson.put("sessionInfo", sessionInfo);
+
+               this.writeResponse(request.response(), responseJson);
+           });
+        });
     }
 
     private void handleUnknown(HttpServerRequest request) {
+        JSONObject responseJson = new JSONObject();
+        responseJson.put("result", "error");
 
+        this.writeResponse(request.response(), responseJson);
     }
 
     private void writeResponse(HttpServerResponse response, JSONObject responseJson) {
@@ -112,6 +142,9 @@ public class ApiServerVerticle extends AbstractVerticle {
     private int id;
     private int port;
     private String host;
+    private RedisOptions redisOptions;
+
+    private RedisClient redisClient;
 
     private HttpServer httpServer;
 

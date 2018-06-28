@@ -1,32 +1,41 @@
 package com.github.sioncheng.xpnsserver.vertx;
 
 import com.alibaba.fastjson.JSON;
+import com.github.sioncheng.xpns.common.client.SessionInfo;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.eventbus.Message;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.core.net.NetServer;
 import io.vertx.core.net.NetSocket;
+import io.vertx.redis.RedisClient;
+import io.vertx.redis.RedisOptions;
 import org.apache.commons.lang3.StringUtils;
 
 import java.util.HashMap;
 
 public class ClientServerVerticle extends AbstractVerticle {
 
-    public ClientServerVerticle(int id, int port, int maxClients) {
+    public ClientServerVerticle(int id, int port, int maxClients, int instances,
+                                RedisOptions redisOptions, String apiHost) {
         this.id = id;
         this.port = port;
         this.maxClients = maxClients;
+        this.instances = instances;
+        this.redisOptions = redisOptions;
+        this.apiHost = apiHost;
         this.clientsCounter = 0;
         this.logonCounter = 0;
         this.clientVerticleTable1 = new HashMap<>();
         this.clientVerticleTable2 = new HashMap<>();
-        this.clientEventAddress = ClientEvent.EVENT_ADDRESS + "." + this.id;
+        this.clientEventAddress = ClientEvent.EVENT_ADDRESS_PREFIX + "." + this.id;
         this.notificationEventAddress = NotificationEvent.EVENT_ADDRESS_PREFIX + "." + this.id;
     }
 
     @Override
     public void start() throws Exception {
+
+        this.redisClient = RedisClient.create(vertx, this.redisOptions);
 
         NetServer netServer = vertx.createNetServer();
         netServer.connectHandler(this::connectHandler);
@@ -45,7 +54,6 @@ public class ClientServerVerticle extends AbstractVerticle {
 
     @Override
     public void stop() throws Exception {
-
 
         super.stop();
     }
@@ -95,42 +103,116 @@ public class ClientServerVerticle extends AbstractVerticle {
                 }
                 break;
             case ClientEvent.LOGON:
-                this.logonCounter++;
-                if (logger.isInfoEnabled()) {
-                    logger.info(String.format("client logon %s %d", event.getAcid(), this.logonCounter));
-                }
-                ClientVerticleEntity cce = this.clientVerticleTable1.get(event.getDeploymentId());
-                if (cce != null) {
-                    cce.setAcid(event.getAcid());
-
-                    ClientVerticleEntity cce2 = new ClientVerticleEntity();
-                    cce2.setAcid(event.getAcid());
-                    cce2.setDeploymentId(event.getDeploymentId());
-                    cce2.setClientVerticle(cce.getClientVerticle());
-                    this.clientVerticleTable2.put(cce2.getAcid(), cce2);
-                } else {
-                    logger.warn(String.format("unable to find deployed client verticle", event.getDeploymentId()));
-                }
-
+                this.handleLogon(event);
                 break;
             case ClientEvent.SOCKET_CLOSE:
-                this.clientsCounter--;
-                if (StringUtils.isNotEmpty(event.getDeploymentId())) {
-                    this.clientVerticleTable1.remove(event.getDeploymentId());
-                    vertx.undeploy(event.getDeploymentId());
-                }
-                if (StringUtils.isNotEmpty(event.getAcid())) {
-                    this.clientVerticleTable2.remove(event.getDeploymentId());
-                }
+                this.handleSocketClose(event);
                 break;
-
             case ClientEvent.STOP:
-
+                break;
+            case ClientEvent.LOGON_FOWARD:
+                this.handleLogonForward(event);
                 break;
             default:
                 logger.warn(String.format("unknown event %s", msg));
                 break;
 
+        }
+    }
+
+    private void handleLogon(ClientEvent event) {
+        this.logonCounter++;
+        if (logger.isInfoEnabled()) {
+            logger.info(String.format("client logon %s %d", event.getAcid(), this.logonCounter));
+        }
+
+        //set to redis
+        SessionInfo sessionInfo = new SessionInfo();
+        sessionInfo.setAcid(event.getAcid());
+        sessionInfo.setServer(this.apiHost);
+        final String onlineKey = RedisHelper.generateOnlineKey(sessionInfo.getAcid());
+        this.redisClient.set(onlineKey,
+                JSON.toJSONString(sessionInfo),
+                result ->{
+                    if (result.succeeded()) {
+                        this.redisClient.expire(onlineKey, 3600, null);
+                    } else {
+                        logger.warn(String.format("set online info to redis failure %s", onlineKey));
+                    }
+                });
+
+        ClientVerticleEntity cce = this.clientVerticleTable1.get(event.getDeploymentId());
+        ClientVerticleEntity cce2 = this.clientVerticleTable2.get(event.getAcid());
+
+        //if there is the same client, close it.
+        if (cce2 != null) {
+            vertx.undeploy(cce2.getDeploymentId());
+            this.clientVerticleTable1.remove(cce2.getDeploymentId());
+
+            if (logger.isInfoEnabled()) {
+                logger.info(String.format("remove existed client %s", event.getAcid()));
+            }
+        }
+
+        if (cce != null) {
+            cce.setAcid(event.getAcid());
+
+            cce2 = new ClientVerticleEntity();
+            cce2.setAcid(event.getAcid());
+            cce2.setDeploymentId(event.getDeploymentId());
+            cce2.setClientVerticle(cce.getClientVerticle());
+            this.clientVerticleTable2.put(cce2.getAcid(), cce2);
+        } else {
+            logger.warn(String.format("unable to find deployed client verticle", event.getDeploymentId()));
+        }
+
+        //forward logon event to other instance,
+        //
+        if (this.instances > 0) {
+            ClientEvent logonForward = event.clone();
+            logonForward.setEventType(ClientEvent.LOGON_FOWARD);
+            for (int i = 0 ; i < this.instances; i++) {
+                if (i == this.id) {
+                    if (logger.isInfoEnabled()) {
+                        logger.info(String.format("skip forward logon event to self %d", this.id));
+                    }
+                    continue;
+                }
+
+                vertx.eventBus().send(ClientEvent.EVENT_ADDRESS_PREFIX + "." +i,
+                        JSON.toJSONString(logonForward));
+            }
+        }
+    }
+
+    private void handleSocketClose(ClientEvent event) {
+        this.clientsCounter--;
+        if (StringUtils.isNotEmpty(event.getDeploymentId())) {
+            this.clientVerticleTable1.remove(event.getDeploymentId());
+            vertx.undeploy(event.getDeploymentId());
+        }
+        if (StringUtils.isNotEmpty(event.getAcid())) {
+            this.clientVerticleTable2.remove(event.getAcid());
+
+
+            this.redisClient.del(RedisHelper.generateOnlineKey(event.getAcid()), null);
+        }
+
+    }
+
+    private void handleLogonForward(ClientEvent event) {
+        if (logger.isInfoEnabled()) {
+            logger.info(String.format("handle logon forward %s", event.getAcid()));
+        }
+        ClientVerticleEntity cce2 = this.clientVerticleTable2.get(event.getAcid());
+
+        if (cce2 != null) {
+            vertx.undeploy(cce2.getDeploymentId());
+            this.clientVerticleTable1.remove(cce2.getDeploymentId());
+
+            if (logger.isInfoEnabled()) {
+                logger.info(String.format("remove existed client %s", event.getAcid()));
+            }
         }
     }
 
@@ -151,6 +233,11 @@ public class ClientServerVerticle extends AbstractVerticle {
     private int id;
     private int port;
     private int maxClients;
+    private int instances;
+    private RedisOptions redisOptions;
+    private String apiHost;
+
+    private RedisClient redisClient;
 
     private int clientsCounter;
     private int logonCounter;

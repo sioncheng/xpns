@@ -1,6 +1,8 @@
 package com.github.sioncheng.xpnsserver;
 
 
+import com.github.sioncheng.xpns.common.config.ServerProperties;
+
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 

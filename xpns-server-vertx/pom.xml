@@ -29,6 +29,13 @@
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-lang3</artifactId>
         </dependency>
+        <!-- https://mvnrepository.com/artifact/io.vertx/vertx-redis-client -->
+        <dependency>
+            <groupId>io.vertx</groupId>
+            <artifactId>vertx-redis-client</artifactId>
+            <version>3.5.2</version>
+        </dependency>
+
     </dependencies>
 
     <!-- Package as an executable jar -->

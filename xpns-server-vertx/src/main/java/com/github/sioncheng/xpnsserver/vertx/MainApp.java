@@ -1,44 +1,35 @@
 package com.github.sioncheng.xpnsserver.vertx;
 
-import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson.JSONObject;
-import com.github.sioncheng.xpns.common.client.Notification;
+import com.github.sioncheng.xpns.common.config.ServerProperties;
 import io.vertx.core.Vertx;
-import io.vertx.core.eventbus.DeliveryOptions;
 
 import java.io.IOException;
-import java.util.HashMap;
 
 public class MainApp {
 
     public static void main(String[] args) throws IOException {
 
-        HashMap<String, String> clientNotificationEventAddressMap = new HashMap<>();
+        ServerProperties.init();
+
+        XpnsServerConfig serverConfig = new XpnsServerConfig();
+
+        serverConfig.setClientPort(ServerProperties.getInt("server.port"));
+        serverConfig.setClientInstances(ServerProperties.getInt("server.client.vertx.instances"));
+        serverConfig.setMaxClients(ServerProperties.getInt("server.max.clients"));
+
+        serverConfig.setApiPort(ServerProperties.getInt("server.api.port"));
+        serverConfig.setApiHost(ServerProperties.getString("server.api.host"));
+        serverConfig.setApiInstances(ServerProperties.getInt("server.api.vertx.instances"));
+
+        serverConfig.setWorkerThreads(ServerProperties.getInt("server.worker.threads"));
+
+        serverConfig.setRedisHost(ServerProperties.getString("redis.host"));
+        serverConfig.setRedisPort(ServerProperties.getInt("redis.port"));
+
+        XpnsServer xpnsServer = new XpnsServer(serverConfig);
 
         Vertx vertx = Vertx.vertx();
-
-        for (int i = 0 ; i < 2; i++) {
-            ClientServerVerticle verticle = new ClientServerVerticle(i,8080, 10);
-            vertx.deployVerticle(verticle);
-        }
-
-
-        for (int i = 0 ; i < 2; i++) {
-            ApiServerVerticle apiServerVerticle = new ApiServerVerticle(i,9090, "0.0.0.0");
-            vertx.deployVerticle(apiServerVerticle);
-        }
-
-        vertx.eventBus().consumer(NotificationEventAddressBroadcast.EVENT_ADDRESS, msg -> {
-            String msgBody = (String)msg.body();
-            NotificationEventAddressBroadcast neab = JSON.parseObject(msgBody, NotificationEventAddressBroadcast.class);
-
-            System.out.println(msgBody);
-            if (neab.isOn()) {
-                clientNotificationEventAddressMap.put(neab.getAcid(), neab.getEventAddress());
-            } else {
-                clientNotificationEventAddressMap.remove(neab.getAcid());
-            }
-        });
+        vertx.deployVerticle(xpnsServer);
 
         System.in.read();
     }

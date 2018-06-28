@@ -19,12 +19,12 @@ public class XpnsServerConfig {
         this.clientPort = clientPort;
     }
 
-    public String getApiServer() {
-        return apiServer;
+    public String getApiHost() {
+        return apiHost;
     }
 
-    public void setApiServer(String apiServer) {
-        this.apiServer = apiServer;
+    public void setApiHost(String apiHost) {
+        this.apiHost = apiHost;
     }
 
     public int getApiPort() {
@@ -59,11 +59,29 @@ public class XpnsServerConfig {
         this.apiInstances = apiInstances;
     }
 
+    public String getRedisHost() {
+        return redisHost;
+    }
+
+    public void setRedisHost(String redisHost) {
+        this.redisHost = redisHost;
+    }
+
+    public int getRedisPort() {
+        return redisPort;
+    }
+
+    public void setRedisPort(int redisPort) {
+        this.redisPort = redisPort;
+    }
+
     private int maxClients;
     private int clientPort;
-    private String apiServer;
+    private String apiHost;
     private int apiPort;
     private int workerThreads;
     private int clientInstances;
     private int apiInstances;
+    private String redisHost;
+    private int redisPort;
 }
