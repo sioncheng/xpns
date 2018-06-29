@@ -79,6 +79,12 @@
                 <artifactId>vertx-core</artifactId>
                 <version>3.5.2</version>
             </dependency>
+            <!-- https://mvnrepository.com/artifact/io.vertx/vertx-kafka-client -->
+            <dependency>
+                <groupId>io.vertx</groupId>
+                <artifactId>vertx-kafka-client</artifactId>
+                <version>3.5.2</version>
+            </dependency>
 
 
         </dependencies>

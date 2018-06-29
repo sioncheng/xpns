@@ -4,8 +4,9 @@ import org.apache.commons.lang3.StringUtils;
 
 import java.io.*;
 import java.util.HashMap;
+import java.util.Map;
 
-public class ServerProperties {
+public class AppProperties {
 
     private static HashMap<String, String> properties = new HashMap<>();
 
@@ -26,9 +27,23 @@ public class ServerProperties {
         return Boolean.parseBoolean(properties.get(key));
     }
 
+    public static Map<String, String> getPropertiesWithPrefix(String keyPrefix) {
+        Map<String, String> result = new HashMap<>();
+
+        for (Map.Entry<String, String> entry :
+                properties.entrySet()) {
+            String key = entry.getKey();
+            if (StringUtils.startsWith(key, keyPrefix)) {
+                result.put(key.replaceFirst(keyPrefix, ""), entry.getValue());
+            }
+        }
+
+        return result;
+    }
+
     private static void loadDefault() throws IOException {
         InputStream inputStream =
-                ServerProperties.class.getClassLoader().getResourceAsStream("xpns-server.properties");
+                AppProperties.class.getClassLoader().getResourceAsStream("app.properties");
 
         loadFromFileConfig(inputStream);
     }
@@ -51,7 +66,12 @@ public class ServerProperties {
 
         String line;
         while (null != (line = bufferedReader.readLine())) {
-            String[] tempArr = StringUtils.trim(line).split("=");
+            line = StringUtils.trim(line);
+            if (StringUtils.startsWith(line, "#")) {
+                continue;
+            }
+
+            String[] tempArr = line.split("=");
 
             if (tempArr.length == 2) {
                 properties.put(StringUtils.trim(tempArr[0]), StringUtils.trim(tempArr[1]));
