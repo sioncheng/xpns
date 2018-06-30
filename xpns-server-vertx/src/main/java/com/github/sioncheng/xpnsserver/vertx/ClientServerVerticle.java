@@ -17,13 +17,14 @@ import java.util.HashMap;
 public class ClientServerVerticle extends AbstractVerticle {
 
     public ClientServerVerticle(int id, int port, int maxClients, int instances,
-                                RedisOptions redisOptions, String apiHost) {
+                                RedisOptions redisOptions, String apiHost, int apiPort) {
         this.id = id;
         this.port = port;
         this.maxClients = maxClients;
         this.instances = instances;
         this.redisOptions = redisOptions;
         this.apiHost = apiHost;
+        this.apiPort = apiPort;
         this.clientsCounter = 0;
         this.logonCounter = 0;
         this.clientVerticleTable1 = new HashMap<>();
@@ -130,6 +131,8 @@ public class ClientServerVerticle extends AbstractVerticle {
         SessionInfo sessionInfo = new SessionInfo();
         sessionInfo.setAcid(event.getAcid());
         sessionInfo.setServer(this.apiHost);
+        sessionInfo.setPort(this.apiPort);
+
         final String onlineKey = RedisHelper.generateOnlineKey(sessionInfo.getAcid());
         this.redisClient.set(onlineKey,
                 JSON.toJSONString(sessionInfo),
@@ -236,6 +239,7 @@ public class ClientServerVerticle extends AbstractVerticle {
     private int instances;
     private RedisOptions redisOptions;
     private String apiHost;
+    private int apiPort;
 
     private RedisClient redisClient;
 

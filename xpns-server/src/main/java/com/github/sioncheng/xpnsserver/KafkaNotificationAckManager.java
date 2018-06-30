@@ -33,7 +33,7 @@ public class KafkaNotificationAckManager {
         }
 
         final String value = JSON.toJSONString(notificationEntity);
-        ProducerRecord<String, String> producerRecord = new ProducerRecord<>(notification.getTo(), value);
+        ProducerRecord<String, String> producerRecord = new ProducerRecord<>(this.ackTopic, notification.getTo(), value);
 
         this.kafkaProducer.send(producerRecord, new Callback() {
             @Override

@@ -2,7 +2,6 @@ package com.github.sioncheng.xpns.dispatcher;
 
 import com.github.sioncheng.xpns.common.config.AppProperties;
 import io.vertx.core.Vertx;
-import org.apache.kafka.clients.consumer.ConsumerConfig;
 
 import java.util.*;
 
@@ -17,10 +16,15 @@ public class MainApp {
 
         Vertx vertx = Vertx.vertx();
 
-        Set<String> topics = new HashSet<>();
-        topics.add("xpns-notification");
+        Set<String> topicsAck = new HashSet<>();
+        topicsAck.add(AppProperties.getString("kafka-ack-topic"));
+        KafkaAckVerticle ackVerticle = new KafkaAckVerticle(config, topicsAck);
+        vertx.deployVerticle(ackVerticle);
 
-        KafkaConsumerVerticle kafkaConsumerVerticle = new KafkaConsumerVerticle(config,
+        Set<String> topics = new HashSet<>();
+        topics.add(AppProperties.getString("kafka-notification-topic"));
+
+        KafkaNotificationVerticle kafkaConsumerVerticle = new KafkaNotificationVerticle(config,
                 topics,
                 AppProperties.getString("zookeeper.servers"));
 

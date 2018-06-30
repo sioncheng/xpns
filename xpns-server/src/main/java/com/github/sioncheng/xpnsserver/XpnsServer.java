@@ -402,7 +402,11 @@ public class XpnsServer implements ClientChannelEventListener {
                     payload);
             clientChannel.writeCommand(command);
 
-            this.sessionManager.putClient(jsonCommand.getAcid(), this.serverConfig.getApiServer());
+            SessionInfo sessionInfo = new SessionInfo();
+            sessionInfo.setAcid(jsonCommand.getAcid());
+            sessionInfo.setServer(this.serverConfig.getApiServer());
+            sessionInfo.setPort(this.serverConfig.getApiPort());
+            this.sessionManager.putClient(sessionInfo);
             this.clientChannels.put(jsonCommand.getAcid(), clientChannel);
 
             if (logger.isInfoEnabled()) {

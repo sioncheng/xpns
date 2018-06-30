@@ -54,8 +54,8 @@ public class NotificationController {
             notification1.setUniqId(notificationRequest.getUniqId());
             notification1.setTo(notificationRequest.getTo());
             notification1.setTitle(notificationRequest.getTitle());
-            notification1.setBody(notification1.getBody());
-            notification1.setExt(notification1.getExt());
+            notification1.setBody(notificationRequest.getBody());
+            notification1.setExt(notificationRequest.getExt());
             notificationEntity.setNotification(notification1);
             notificationEntity.setTtl(notificationRequest.getTtl());
 

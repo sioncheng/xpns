@@ -68,8 +68,8 @@ public class ApiServerVerticle extends AbstractVerticle {
             String s = new String(buffer.getBytes());
             Notification notification = JSON.parseObject(s, Notification.class);
 
-            String uuid = (UUID.randomUUID()).toString();
-            notification.setUniqId(uuid);
+            //String uuid = (UUID.randomUUID()).toString();
+            //notification.setUniqId(uuid);
 
             JSONObject responseJson = new JSONObject();
             responseJson.put("messageId", notification.getUniqId());

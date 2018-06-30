@@ -18,7 +18,17 @@ public class SessionInfo {
         this.server = server;
     }
 
+    public int getPort() {
+        return port;
+    }
+
+    public void setPort(int port) {
+        this.port = port;
+    }
+
     private String acid;
 
     private String server;
+
+    private int port;
 }

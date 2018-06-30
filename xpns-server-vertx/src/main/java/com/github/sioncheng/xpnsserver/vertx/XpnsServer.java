@@ -35,7 +35,8 @@ public class XpnsServer extends AbstractVerticle {
                     maxClients,
                     this.serverConfig.getClientInstances(),
                     redisOptions,
-                    this.serverConfig.getApiHost());
+                    this.serverConfig.getApiHost(),
+                    this.serverConfig.getApiPort());
             vertx.deployVerticle(verticle);
         }
 
@@ -44,7 +45,8 @@ public class XpnsServer extends AbstractVerticle {
                 this.serverConfig.getMaxClients() - i * maxClients,
                 this.serverConfig.getClientInstances(),
                 redisOptions,
-                this.serverConfig.getApiHost());
+                this.serverConfig.getApiHost(),
+                this.serverConfig.getApiPort());
         vertx.deployVerticle(verticle);
     }
 

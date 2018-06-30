@@ -4,7 +4,7 @@ import com.github.sioncheng.xpns.common.client.SessionInfo;
 
 public interface SessionManager {
 
-    void putClient(String acid, String server);
+    void putClient(SessionInfo sessionInfo);
 
     void removeClient(String acid, String server);
 

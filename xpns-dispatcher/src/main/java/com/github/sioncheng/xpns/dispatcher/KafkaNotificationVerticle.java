@@ -17,16 +17,15 @@ import io.vertx.kafka.client.common.TopicPartition;
 import io.vertx.kafka.client.consumer.KafkaConsumer;
 import io.vertx.kafka.client.consumer.KafkaConsumerRecord;
 import io.vertx.kafka.client.consumer.OffsetAndMetadata;
-import org.apache.commons.lang3.StringUtils;
 import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.ZooKeeper;
 
 import java.util.*;
 
-public class KafkaConsumerVerticle extends AbstractVerticle implements Watcher {
+public class KafkaNotificationVerticle extends AbstractVerticle implements Watcher {
 
-    public KafkaConsumerVerticle(Map<String, String> config, Set<String> topics, String zkServers) {
+    public KafkaNotificationVerticle(Map<String, String> config, Set<String> topics, String zkServers) {
         this.config = config;
         this.topics = topics;
         this.zkServers = zkServers;
@@ -200,22 +199,8 @@ public class KafkaConsumerVerticle extends AbstractVerticle implements Watcher {
                             final KafkaConsumerRecord<String, String> record) {
 
         String server = sessionInfo.getString("server");
-        String service = null;
-        for (String s :
-                this.services) {
-            if (s.startsWith(server)) {
-                service = s;
-            }
-        }
+        int port = sessionInfo.getInteger("port");
 
-        if (StringUtils.isEmpty(service)) {
-            offlineNotificationEntity(entity, record);
-
-            logger.warn(String.format("cant locate service for %s at server %s",
-                    entity.getNotification().getTo(), server));
-
-            return;
-        }
 
         try {
 
@@ -223,10 +208,12 @@ public class KafkaConsumerVerticle extends AbstractVerticle implements Watcher {
                     .getBytes("UTF-8");
 
             HttpClient httpClient = vertx.createHttpClient();
-            String[] hostPort = service.trim().split(":");
-            httpClient.post(Integer.parseInt(hostPort[1]), hostPort[0], "/notification")
+            httpClient.post(port, server, "/notification")
                     .putHeader("Content-Type", "application/json;charset=UTF-8")
                     .putHeader("Content-Length", String.valueOf(requestData.length))
+                    .exceptionHandler(t -> {
+                        logger.warn(t);
+                    })
                     .handler(resopnse -> resopnse.bodyHandler(resonseBody -> {
                         String s = new String(resonseBody.getBytes());
                         if (logger.isInfoEnabled()) {
@@ -270,5 +257,5 @@ public class KafkaConsumerVerticle extends AbstractVerticle implements Watcher {
 
     private Class<? extends String[]> stringArrayClazz;
 
-    private static final Logger logger = LoggerFactory.getLogger(KafkaConsumerVerticle.class);
+    private static final Logger logger = LoggerFactory.getLogger(KafkaNotificationVerticle.class);
 }

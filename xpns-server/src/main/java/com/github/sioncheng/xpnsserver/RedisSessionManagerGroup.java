@@ -33,10 +33,8 @@ public class RedisSessionManagerGroup implements SessionManager {
         this.stop = true;
     }
 
-    public void putClient(String acid, String server) {
-        SessionInfo sessionInfo = new SessionInfo();
-        sessionInfo.setAcid(acid);
-        sessionInfo.setServer(server);
+    public void putClient(SessionInfo sessionInfo) {
+        String acid = sessionInfo.getAcid();
 
         this.putClientQueues.get(hashAcid(acid)).add(sessionInfo);
     }
@@ -61,7 +59,7 @@ public class RedisSessionManagerGroup implements SessionManager {
             }
 
             this.getRedisSessionManager(sessionInfo.getAcid())
-                    .putClient(sessionInfo.getAcid(), sessionInfo.getServer());
+                    .putClient(sessionInfo);
         }
     }
 

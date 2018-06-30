@@ -16,12 +16,9 @@ public class RedisSessionManager implements SessionManager {
         this.jedisPool = new JedisPool(host, port);
     }
 
-    public void putClient(String acid, String server) {
-        SessionInfo sessionInfo = new SessionInfo();
-        sessionInfo.setAcid(acid);
-        sessionInfo.setServer(server);
+    public void putClient(SessionInfo sessionInfo) {
         String jsonData = JSON.toJSONString(sessionInfo);
-        String onlineKey = ONLINE + acid;
+        String onlineKey = ONLINE + sessionInfo.getAcid();
 
         Jedis jedis = jedisPool.getResource();
 

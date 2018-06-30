@@ -54,8 +54,8 @@ public class ApiHttpHandler extends SimpleChannelInboundHandler<FullHttpRequest>
         JSONObject jsonObject = JSON.parseObject(s);
         Notification notification = new Notification();
         notification.fromJSONObject(jsonObject);
-        String uuid = (UUID.randomUUID().toString());
-        notification.setUniqId(uuid);
+        //String uuid = (UUID.randomUUID().toString());
+        //notification.setUniqId(uuid);
 
         this.xpnsServer.notificationIn(notification);
 

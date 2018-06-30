@@ -14,17 +14,22 @@ public class RedisSessionManagerGroupTest {
         String acid = "32000001";
         String localhost = "localhost";
 
-        redisSessionManagerGroup.putClient(acid, localhost);
+        SessionInfo sessionInfo = new SessionInfo();
+        sessionInfo.setAcid(acid);
+        sessionInfo.setServer(localhost);
+        sessionInfo.setPort(9090);
+
+        redisSessionManagerGroup.putClient(sessionInfo);
         Thread.sleep(500);
 
-        SessionInfo sessionInfo = redisSessionManagerGroup.getClient(acid);
-        Assert.assertNotNull(sessionInfo);
-        Assert.assertEquals(acid, sessionInfo.getAcid());
-        Assert.assertEquals(localhost, sessionInfo.getServer());
+        SessionInfo sessionInfo1 = redisSessionManagerGroup.getClient(acid);
+        Assert.assertNotNull(sessionInfo1);
+        Assert.assertEquals(acid, sessionInfo1.getAcid());
+        Assert.assertEquals(localhost, sessionInfo1.getServer());
 
         redisSessionManagerGroup.removeClient(acid, localhost);
 
-        SessionInfo sessionInfo1 = redisSessionManagerGroup.getClient(acid);
-        Assert.assertNull(sessionInfo1);
+        SessionInfo sessionInfo2 = redisSessionManagerGroup.getClient(acid);
+        Assert.assertNull(sessionInfo2);
     }
 }

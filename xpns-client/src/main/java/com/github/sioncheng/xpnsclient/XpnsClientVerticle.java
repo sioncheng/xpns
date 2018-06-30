@@ -178,5 +178,6 @@ public class XpnsClientVerticle extends AbstractVerticle {
     private static final int NEW = 0;
     private static final int LOGON = 1;
 
+
     private static Logger logger = LoggerFactory.getLogger(XpnsClientVerticle.class);
 }
