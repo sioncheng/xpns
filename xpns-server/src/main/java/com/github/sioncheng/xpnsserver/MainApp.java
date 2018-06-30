@@ -3,6 +3,8 @@ package com.github.sioncheng.xpnsserver;
 
 import com.github.sioncheng.xpns.common.config.AppProperties;
 
+import java.util.Map;
+import java.util.Properties;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
@@ -16,17 +18,15 @@ public class MainApp {
         RedisSessionManager redisSessionManager = new RedisSessionManager(AppProperties.getString("redis.host")
                 , AppProperties.getInt("redis.port"));
 
-        KafkaNotificationConsumerConfig kafkaConsumerConfig = new KafkaNotificationConsumerConfig();
-        kafkaConsumerConfig.setBootstrapServer(AppProperties.getString("kafka.bootstrap.server"));
-        kafkaConsumerConfig.setGroupId(AppProperties.getString("kafka.group.id"));
-        kafkaConsumerConfig.setEnableAutoCommit(AppProperties.getBoolean("kafka.enable.auto.commit"));
-        kafkaConsumerConfig.setSessionTimeoutMS(AppProperties.getInt("kafka.session.timeout.ms"));
-        kafkaConsumerConfig.setAutoCommitIntervalMS(AppProperties.getInt("kafka.auto.commit.interval.ms"));
-        kafkaConsumerConfig.setAutoOffsetReset(AppProperties.getString("kafka.auto.offset.reset"));
-        kafkaConsumerConfig.setKeyDeserializer(AppProperties.getString("kafka.key.deserializer"));
-        kafkaConsumerConfig.setValueDeserializer(AppProperties.getString("kafka.value.deserializer"));
+        Map<String, String> kafkaProducerConfig = AppProperties.getPropertiesWithPrefix("kafka.producer.");
+        Properties properties = new Properties();
+        for (Map.Entry<String, String> entry :
+                kafkaProducerConfig.entrySet()) {
+            properties.put(entry.getKey(), entry.getValue());
+        }
 
-        KafkaNotificationManager kafkaNotificationManager = new KafkaNotificationManager(kafkaConsumerConfig);
+        KafkaNotificationAckManager kafkaNotificationManager = new KafkaNotificationAckManager(properties,
+                AppProperties.getString("kafka-ack-topic"));
 
 
         XpnsServerConfig xpnsServerConfig = new XpnsServerConfig();
@@ -40,7 +40,8 @@ public class MainApp {
 
         XpnsServer xpnsServer = new XpnsServer(xpnsServerConfig,
                 redisSessionManager,
-                kafkaNotificationManager);
+                kafkaNotificationManager,
+                AppProperties.getString("zookeeper.servers"));
 
         xpnsServer.start();
 

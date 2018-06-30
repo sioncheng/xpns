@@ -4,7 +4,6 @@ import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.github.sioncheng.xpns.common.client.Notification;
 import com.github.sioncheng.xpns.common.client.SessionInfo;
-import com.github.sioncheng.xpns.common.client.SessionManager;
 import com.github.sioncheng.xpns.common.protocol.Command;
 import com.github.sioncheng.xpns.common.protocol.JsonCommand;
 import okhttp3.*;
@@ -15,6 +14,7 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.Properties;
 
 public class ServerTest {
 
@@ -27,7 +27,8 @@ public class ServerTest {
 
         XpnsServer xpnsServer = new XpnsServer(this.createXpnsServerConfig(),
                 sessionManager,
-                this.createNotificationManager());
+                this.createNotificationManager(),
+                "localhost:2181");
         boolean result = xpnsServer.start();
         Assert.assertTrue(result);
 
@@ -189,19 +190,15 @@ public class ServerTest {
         return xpnsServerConfig;
     }
 
-    private KafkaNotificationManager createNotificationManager() {
+    private KafkaNotificationAckManager createNotificationManager() {
 
-        KafkaNotificationConsumerConfig consumerConfig = new KafkaNotificationConsumerConfig();
-        consumerConfig.setAutoCommitIntervalMS(1000);
-        consumerConfig.setAutoOffsetReset("smallest");
-        consumerConfig.setBootstrapServer("localhost:9092");
-        consumerConfig.setEnableAutoCommit(true);
-        consumerConfig.setGroupId("xpns-server");
-        consumerConfig.setKeyDeserializer("org.apache.kafka.common.serialization.StringDeserializer");
-        consumerConfig.setValueDeserializer("org.apache.kafka.common.serialization.StringDeserializer");
-        consumerConfig.setSessionTimeoutMS(30000);
+        Properties properties = new Properties();
+        properties.put("bootstrap.servers", "localhost:9092");
+        properties.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+        properties.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+        properties.put("acks", "1");
 
-        KafkaNotificationManager notificationManager = new KafkaNotificationManager(consumerConfig);
+        KafkaNotificationAckManager notificationManager = new KafkaNotificationAckManager(properties, "xpns-ack");
 
         return notificationManager;
     }

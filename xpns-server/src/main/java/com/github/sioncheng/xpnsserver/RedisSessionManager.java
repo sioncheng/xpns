@@ -2,7 +2,6 @@ package com.github.sioncheng.xpnsserver;
 
 import com.alibaba.fastjson.JSON;
 import com.github.sioncheng.xpns.common.client.SessionInfo;
-import com.github.sioncheng.xpns.common.client.SessionManager;
 import org.apache.commons.lang3.StringUtils;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;

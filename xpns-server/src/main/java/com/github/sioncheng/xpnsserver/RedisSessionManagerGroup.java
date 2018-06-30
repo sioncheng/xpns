@@ -1,7 +1,6 @@
 package com.github.sioncheng.xpnsserver;
 
 import com.github.sioncheng.xpns.common.client.SessionInfo;
-import com.github.sioncheng.xpns.common.client.SessionManager;
 
 import java.util.ArrayList;
 import java.util.List;

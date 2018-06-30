@@ -1,4 +1,6 @@
-package com.github.sioncheng.xpns.common.client;
+package com.github.sioncheng.xpnsserver;
+
+import com.github.sioncheng.xpns.common.client.SessionInfo;
 
 public interface SessionManager {
 

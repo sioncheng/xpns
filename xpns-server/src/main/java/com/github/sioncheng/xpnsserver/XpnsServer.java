@@ -4,9 +4,9 @@ import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.github.sioncheng.xpns.common.client.Notification;
 import com.github.sioncheng.xpns.common.client.SessionInfo;
-import com.github.sioncheng.xpns.common.client.SessionManager;
 import com.github.sioncheng.xpns.common.protocol.Command;
 import com.github.sioncheng.xpns.common.protocol.JsonCommand;
+import com.github.sioncheng.xpns.common.zk.Directories;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
@@ -17,6 +17,7 @@ import io.netty.handler.codec.http.HttpObjectAggregator;
 import io.netty.handler.codec.http.HttpRequestDecoder;
 import io.netty.handler.codec.http.HttpResponseEncoder;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.zookeeper.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -33,10 +34,12 @@ public class XpnsServer implements ClientChannelEventListener {
 
     public XpnsServer(XpnsServerConfig serverConfig,
                       SessionManager sessionManager,
-                      KafkaNotificationManager notificationManager) {
+                      KafkaNotificationAckManager notificationManager,
+                      String zkServers) {
         this.serverConfig = serverConfig;
         this.sessionManager = sessionManager;
         this.notificationManager = notificationManager;
+        this.zkServers = zkServers;
         this.stop = false;
     }
 
@@ -47,6 +50,8 @@ public class XpnsServer implements ClientChannelEventListener {
         startApiServer();
 
         startWorkerThreads();
+
+        registerToZk();
 
         return true;
     }
@@ -204,6 +209,29 @@ public class XpnsServer implements ClientChannelEventListener {
             this.serverWorkThreads.add(t);
             t.start();
         }
+    }
+
+    private void registerToZk() throws Exception {
+        this.zooKeeper = new ZooKeeper(this.zkServers, 5000, new Watcher() {
+            @Override
+            public void process(WatchedEvent watchedEvent) {
+
+            }
+        });
+
+        String root = Directories.XPNS_SERVER_ROOT;
+        if (this.zooKeeper.exists(root, false) == null) {
+            this.zooKeeper.create(root, null, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+        }
+
+        String apiServices = root + "/" + Directories.API_SERVICES;
+        if (this.zooKeeper.exists(apiServices, false) == null) {
+            this.zooKeeper.create(apiServices, null, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+        }
+
+        String servicePath = apiServices + "/" +
+                this.serverConfig.getApiServer() + ":" + this.serverConfig.getApiPort();
+        this.zooKeeper.create(servicePath, null, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
     }
 
     private void workerThreadMethod(int i) {
@@ -485,7 +513,9 @@ public class XpnsServer implements ClientChannelEventListener {
 
     private XpnsServerConfig serverConfig;
     private SessionManager sessionManager;
-    private KafkaNotificationManager notificationManager;
+    private KafkaNotificationAckManager notificationManager;
+    private String zkServers;
+    private ZooKeeper zooKeeper;
 
     private NioEventLoopGroup eventLoopGroupMaster;
     private NioEventLoopGroup eventLoopGroup;

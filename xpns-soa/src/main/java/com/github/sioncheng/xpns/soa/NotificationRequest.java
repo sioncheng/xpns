@@ -2,9 +2,9 @@ package com.github.sioncheng.xpns.soa;
 
 import com.alibaba.fastjson.JSONObject;
 
-public class Notification {
+public class NotificationRequest {
 
-    public Notification() {}
+    public NotificationRequest() {}
 
     public String getUniqId() {
         return uniqId;
@@ -46,6 +46,14 @@ public class Notification {
         this.ext = ext;
     }
 
+    public int getTtl() {
+        return ttl;
+    }
+
+    public void setTtl(int ttl) {
+        this.ttl = ttl;
+    }
+
     private String uniqId;
 
     private String to;
@@ -55,5 +63,7 @@ public class Notification {
     private String body;
 
     private JSONObject ext;
+
+    private int ttl;
 }
 
