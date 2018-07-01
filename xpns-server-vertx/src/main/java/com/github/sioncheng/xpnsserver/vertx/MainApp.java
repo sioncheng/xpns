@@ -9,6 +9,9 @@ public class MainApp {
 
     public static void main(String[] args) throws IOException {
 
+        System.setProperty("vertx.logger-delegate-factory-class-name",
+                "io.vertx.core.logging.SLF4JLogDelegateFactory");
+
         AppProperties.init();
 
         XpnsServerConfig serverConfig = new XpnsServerConfig();
