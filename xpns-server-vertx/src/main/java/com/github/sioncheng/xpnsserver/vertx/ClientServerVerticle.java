@@ -1,23 +1,35 @@
 package com.github.sioncheng.xpnsserver.vertx;
 
 import com.alibaba.fastjson.JSON;
+import com.github.sioncheng.xpns.common.client.Notification;
 import com.github.sioncheng.xpns.common.client.SessionInfo;
+import com.github.sioncheng.xpns.common.date.DateFormatPatterns;
+import com.github.sioncheng.xpns.common.protocol.JsonCommand;
+import com.github.sioncheng.xpns.common.storage.NotificationEntity;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.eventbus.Message;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.core.net.NetServer;
 import io.vertx.core.net.NetSocket;
+import io.vertx.kafka.client.producer.KafkaProducer;
+import io.vertx.kafka.client.producer.KafkaProducerRecord;
+import io.vertx.kafka.client.producer.impl.KafkaProducerRecordImpl;
 import io.vertx.redis.RedisClient;
 import io.vertx.redis.RedisOptions;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.time.DateFormatUtils;
 
+import java.util.Date;
 import java.util.HashMap;
+import java.util.Map;
 
 public class ClientServerVerticle extends AbstractVerticle {
 
     public ClientServerVerticle(int id, int port, int maxClients, int instances,
-                                RedisOptions redisOptions, String apiHost, int apiPort) {
+                                RedisOptions redisOptions, String apiHost, int apiPort,
+                                Map<String, String> kafakProducerConfig,
+                                String notificationAckTopic) {
         this.id = id;
         this.port = port;
         this.maxClients = maxClients;
@@ -25,6 +37,8 @@ public class ClientServerVerticle extends AbstractVerticle {
         this.redisOptions = redisOptions;
         this.apiHost = apiHost;
         this.apiPort = apiPort;
+        this.kafkaProducerConfig = kafakProducerConfig;
+        this.notificationAckTopic = notificationAckTopic;
         this.clientsCounter = 0;
         this.logonCounter = 0;
         this.clientVerticleTable1 = new HashMap<>();
@@ -49,6 +63,8 @@ public class ClientServerVerticle extends AbstractVerticle {
         vertx.eventBus().consumer(this.clientEventAddress, this::clientEventHandler);
         vertx.eventBus().consumer(NotificationAskEvent.EVENT_ADDRESS, this::notificationAskEventHandler);
         vertx.eventBus().consumer(this.notificationEventAddress, this::notificationEventHandler);
+
+        kafkaProducer = KafkaProducer.create(vertx, this.kafkaProducerConfig);
 
         super.start();
     }
@@ -113,6 +129,9 @@ public class ClientServerVerticle extends AbstractVerticle {
                 break;
             case ClientEvent.LOGON_FOWARD:
                 this.handleLogonForward(event);
+                break;
+            case ClientEvent.ACK:
+                this.handleNotificationAck(event);
                 break;
             default:
                 logger.warn(String.format("unknown event %s", msg));
@@ -219,6 +238,28 @@ public class ClientServerVerticle extends AbstractVerticle {
         }
     }
 
+    private void handleNotificationAck(ClientEvent event) {
+        if (logger.isInfoEnabled()) {
+            logger.info(String.format("handle notification ack %s", event.getCommandObject().toJSONString()));
+        }
+
+        Notification notification = new Notification();
+        notification.fromJSONObject(event.getCommandObject().getJSONObject(JsonCommand.NOTIFICATION));
+
+        NotificationEntity notificationEntity = new NotificationEntity();
+        notificationEntity.setTtl(0);
+        notificationEntity.setNotification(notification);
+        notificationEntity.setStatus(NotificationEntity.DELIVERED);
+        notificationEntity.setCreateDateTime(DateFormatUtils.format(new Date(), DateFormatPatterns.ISO8601_WITH_MS));
+
+        KafkaProducerRecord<String, String> kafkaProducerRecord =
+                new KafkaProducerRecordImpl<>(this.notificationAckTopic,
+                        notification.getTo(),
+                        JSON.toJSONString(notificationEntity));
+
+        this.kafkaProducer.write(kafkaProducerRecord);
+    }
+
     private void notificationAskEventHandler(Message<String> msg) {
         String to = msg.body();
         if (this.clientVerticleTable2.containsKey(to)) {
@@ -240,6 +281,8 @@ public class ClientServerVerticle extends AbstractVerticle {
     private RedisOptions redisOptions;
     private String apiHost;
     private int apiPort;
+    private Map<String, String> kafkaProducerConfig;
+    private String notificationAckTopic;
 
     private RedisClient redisClient;
 
@@ -249,6 +292,8 @@ public class ClientServerVerticle extends AbstractVerticle {
     private HashMap<String, ClientVerticleEntity> clientVerticleTable2;
     private String clientEventAddress;
     private String notificationEventAddress;
+
+    private KafkaProducer<String, String> kafkaProducer;
 
     private Logger logger = LoggerFactory.getLogger(ClientServerVerticle.class);
 

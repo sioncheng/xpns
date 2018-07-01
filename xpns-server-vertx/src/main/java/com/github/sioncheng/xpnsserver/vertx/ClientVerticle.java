@@ -66,7 +66,7 @@ public class ClientVerticle extends AbstractVerticle {
 
         vertx.eventBus().send(clientEventAddress, JSON.toJSONString(event));
 
-        this.publishNotificationOnOff(false);
+        this.publishNotificationEventAddressOnOff(false);
 
         if (this.notificationConsumer != null) {
             this.notificationConsumer.unregister();
@@ -90,7 +90,9 @@ public class ClientVerticle extends AbstractVerticle {
     }
 
     private void socketExceptionHandler(Throwable t) {
+        logger.warn("socket exception handler", t);
 
+        close();
     }
 
     private void socketCloseHandler(Void v) {
@@ -98,6 +100,12 @@ public class ClientVerticle extends AbstractVerticle {
         if (logger.isInfoEnabled()) {
             logger.info(String.format("socket closed %s", this.acid));
         }
+
+        close();
+    }
+
+    private void close() {
+        this.status = STOP;
 
         if (this.netSocket == null) {
             if (logger.isInfoEnabled()) {
@@ -148,7 +156,7 @@ public class ClientVerticle extends AbstractVerticle {
 
         this.notificationEventAddress = NotificationEvent.EVENT_ADDRESS_PREFIX + "." + this.deploymentID();
 
-        this.publishNotificationOnOff(true);
+        this.publishNotificationEventAddressOnOff(true);
 
         vertx.eventBus().consumer(this.notificationEventAddress, this::notificationEventHandler);
 
@@ -162,6 +170,14 @@ public class ClientVerticle extends AbstractVerticle {
         if (logger.isInfoEnabled()) {
             logger.info(String.format("notification ack %s", jsonCommand.getCommandObject().toJSONString()));
         }
+
+        ClientEvent event = new ClientEvent();
+        event.setAcid(this.acid);
+        event.setDeploymentId(this.deploymentID());
+        event.setCommandObject(jsonCommand.getCommandObject());
+        event.setEventType(ClientEvent.ACK);
+
+        vertx.eventBus().send(clientEventAddress, JSON.toJSONString(event));
     }
 
     private void handleHeartbeat(JsonCommand jsonCommand) {
@@ -189,7 +205,7 @@ public class ClientVerticle extends AbstractVerticle {
         }
     }
 
-    private void publishNotificationOnOff(boolean on) {
+    private void publishNotificationEventAddressOnOff(boolean on) {
         NotificationEventAddressBroadcast neab = new NotificationEventAddressBroadcast();
         neab.setOn(on);
         neab.setAcid(this.acid);
@@ -203,6 +219,12 @@ public class ClientVerticle extends AbstractVerticle {
 
     private void notificationEventHandler(Message<String> msg) {
         Notification notification = JSON.parseObject(msg.body(), Notification.class);
+
+        if (this.status == STOP) {
+
+            return;
+            //
+        }
 
         JSONObject jsonObject = new JSONObject();
         jsonObject.put(JsonCommand.ACID, notification.getTo());
@@ -227,6 +249,7 @@ public class ClientVerticle extends AbstractVerticle {
 
     private static final int NEW = 0;
     private static final int LOGON = 1;
+    private static final int STOP = 2;
 
     private static final Logger logger = LoggerFactory.getLogger(ClientVerticle.class);
 
