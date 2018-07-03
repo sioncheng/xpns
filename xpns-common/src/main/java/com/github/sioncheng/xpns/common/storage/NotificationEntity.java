@@ -5,7 +5,7 @@ import com.github.sioncheng.xpns.common.client.Notification;
 public class NotificationEntity {
 
     public static final int NEW = 0;
-    public static final int QUEUE = 1;
+    public static final int DEQUEUE = 1;
     public static final int SENT = 2;
     public static final int UNDELIVER = 3;
     public static final int DELIVERED = 4;

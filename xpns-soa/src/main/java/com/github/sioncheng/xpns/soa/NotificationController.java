@@ -73,6 +73,15 @@ public class NotificationController {
                         notificationResult.setResult("error");
                     } else {
                         notificationResult.setResult("ok");
+
+
+
+                        String topicEs =AppProperties.getString("kafka-es");
+                        ProducerRecord<String, String> recordEs = new ProducerRecord<>(topicEs,
+                                notificationRequest.getTo(),
+                                JSON.toJSONString(notificationEntity));
+
+                        kafkaProducer.send(recordEs);
                     }
 
                     result.setResult(notificationResult);

@@ -168,7 +168,6 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
 
             String service = this.services.get(rand.nextInt(this.services.size()));
 
-            HttpClient httpClient = vertx.createHttpClient();
             String[] hostPort = service.trim().split(":");
             httpClient.post(Integer.parseInt(hostPort[1]), hostPort[0], "/client")
                     .putHeader("Content-Type", "application/json;charset=UTF-8")
@@ -214,7 +213,7 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
                     .exceptionHandler(t -> {
                         logger.warn(t);
                     })
-                    .handler(resopnse -> resopnse.bodyHandler(resonseBody -> {
+                    .handler(response -> response.bodyHandler(resonseBody -> {
                         String s = new String(resonseBody.getBytes());
                         if (logger.isInfoEnabled()) {
                             logger.info(s);
@@ -250,6 +249,8 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
     private ZooKeeper zooKeeper;
 
     private KafkaConsumer<String, String> kafkaConsumer;
+
+    private HttpClient httpClient = vertx.createHttpClient();
 
     private String xpnsServicesEventAddress;
     private List<String> services;
