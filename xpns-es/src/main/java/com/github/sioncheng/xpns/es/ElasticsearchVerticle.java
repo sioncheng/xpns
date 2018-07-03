@@ -10,11 +10,14 @@ import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.HttpClient;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
+import io.vertx.kafka.client.common.TopicPartition;
 import io.vertx.kafka.client.consumer.KafkaConsumer;
 import io.vertx.kafka.client.consumer.KafkaConsumerRecord;
+import io.vertx.kafka.client.consumer.OffsetAndMetadata;
 import org.apache.commons.lang3.time.DateFormatUtils;
 
 import java.util.Date;
+import java.util.HashMap;
 import java.util.Map;
 
 public class ElasticsearchVerticle extends AbstractVerticle {
@@ -54,10 +57,11 @@ public class ElasticsearchVerticle extends AbstractVerticle {
 
         NotificationEntity entity = JSON.parseObject(record.value(), NotificationEntity.class);
 
-        this.index(entity);
+        this.index(entity, record);
     }
 
-    private void index(NotificationEntity entity) {
+    private void index(NotificationEntity entity,
+                       KafkaConsumerRecord<String, String> record) {
         /*
         * elasticsearch index api
         * PUT twitter/_doc/1
@@ -89,10 +93,17 @@ public class ElasticsearchVerticle extends AbstractVerticle {
                     })
                     .handler(response -> {
                         response.bodyHandler(responseBuffer -> {
+
+                            String responseBody = new String(responseBuffer.getBytes());
                             if (logger.isInfoEnabled()) {
-                                String responseBody = new String(responseBuffer.getBytes());
                                 logger.info(responseBody);
                             }
+
+                            JSONObject esResponseObject = JSON.parseObject(responseBody);
+                            if ("created".equals(esResponseObject.getString("result"))) {
+                                commit(record);
+                            }
+
                         });
                     })
                     .putHeader("Content-Type", "application/json;charset=UTF-8")
@@ -102,6 +113,24 @@ public class ElasticsearchVerticle extends AbstractVerticle {
         } catch (Exception ex) {
             logger.warn("index entity error", ex);
         }
+
+    }
+
+    private void commit(KafkaConsumerRecord<String, String> record) {
+
+        Map<TopicPartition, OffsetAndMetadata> offsets = new HashMap<>(1);
+
+        TopicPartition topicPartition = new TopicPartition();
+        topicPartition.setPartition(record.partition());
+        topicPartition.setTopic(record.topic());
+
+        OffsetAndMetadata offsetAndMetadata = new OffsetAndMetadata();
+        offsetAndMetadata.setMetadata("");
+        offsetAndMetadata.setOffset(record.offset());
+
+        offsets.put(topicPartition, offsetAndMetadata);
+
+        kafkaConsumer.commit(offsets);
 
     }
 
