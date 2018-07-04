@@ -1,6 +1,7 @@
 package com.github.sioncheng.xpns.dispatcher;
 
 import com.alibaba.fastjson.JSON;
+import com.github.sioncheng.xpns.common.date.DateFormatPatterns;
 import com.github.sioncheng.xpns.common.storage.NotificationEntity;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.AsyncResult;
@@ -11,7 +12,9 @@ import io.vertx.kafka.client.common.TopicPartition;
 import io.vertx.kafka.client.consumer.KafkaConsumer;
 import io.vertx.kafka.client.consumer.KafkaConsumerRecord;
 import io.vertx.kafka.client.consumer.OffsetAndMetadata;
+import org.apache.commons.lang3.time.DateFormatUtils;
 
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
@@ -72,7 +75,24 @@ public class KafkaAckVerticle extends AbstractVerticle  {
             return;
         }
 
+        //log to es
+        NotificationEntity entityEs = notificationEntity.clone();
+        //entityEs.setStatus(NotificationEntity.DELIVERED);
+        entityEs.setStatusDateTime(DateFormatUtils.format(new Date(), DateFormatPatterns.ISO8601_WITH_MS));
+        vertx.eventBus().send(KafkaEsVerticle.NotificationEntityESEventAddress, JSON.toJSONString(entityEs));
 
+        updateNotification(notificationEntity, record);
+    }
+
+    private void updateNotification(NotificationEntity notificationEntity,
+                                    KafkaConsumerRecord<String, String> record) {
+        //
+
+        if (logger.isInfoEnabled()) {
+            logger.info(String.format("update notification %s",
+                    notificationEntity.getNotification().toJSONObject().toJSONString()));
+        }
+        kafkaConsumer.commit(generateCommitOffset(record));
     }
 
 

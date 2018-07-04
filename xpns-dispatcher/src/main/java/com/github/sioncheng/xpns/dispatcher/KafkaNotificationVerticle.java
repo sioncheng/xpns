@@ -41,6 +41,8 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
 
         //startConsumer();
 
+        this.httpClient = vertx.createHttpClient();
+
         vertx.eventBus().consumer(this.xpnsServicesEventAddress, this::xpnsServiceEventHandler);
 
         startDiscoverServices();
@@ -273,7 +275,7 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
 
     private KafkaConsumer<String, String> kafkaConsumer;
 
-    private HttpClient httpClient = vertx.createHttpClient();
+    private HttpClient httpClient;
 
     private String xpnsServicesEventAddress;
     private List<String> services;
