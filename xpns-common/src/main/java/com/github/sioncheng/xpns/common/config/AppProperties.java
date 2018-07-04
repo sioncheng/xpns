@@ -49,7 +49,7 @@ public class AppProperties {
     }
 
     private static void loadSpecific() throws IOException {
-        String specific = System.getProperty("xpns-server-config");
+        String specific = System.getProperty("config");
         if (StringUtils.isEmpty(specific)) {
             return;
         }

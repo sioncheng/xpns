@@ -173,7 +173,7 @@ public class XpnsServer implements ClientChannelEventListener {
 
         InetSocketAddress inetSocketAddress = new InetSocketAddress(this.serverConfig.getApiServer(),
                 this.serverConfig.getApiPort());
-        this.serverBootstrapForApi.bind(inetSocketAddress).sync();
+        this.serverBootstrapForApi.bind(this.serverConfig.getApiPort()).sync();
 
         if (logger.isInfoEnabled()) {
             logger.info("start api server at {}:{}",

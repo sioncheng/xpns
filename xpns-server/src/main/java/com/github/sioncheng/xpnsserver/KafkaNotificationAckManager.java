@@ -40,6 +40,10 @@ public class KafkaNotificationAckManager {
             public void onCompletion(RecordMetadata recordMetadata, Exception e) {
                 if (e != null) {
                     logger.warn(String.format("send notification ack error %s", value), e);
+                } else {
+                    if (logger.isInfoEnabled()) {
+                        logger.info(String.format("kafka producer send callback %s", recordMetadata.topic()));
+                    }
                 }
             }
         });

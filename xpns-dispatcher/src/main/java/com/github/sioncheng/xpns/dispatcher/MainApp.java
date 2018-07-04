@@ -22,13 +22,14 @@ public class MainApp {
         KafkaEsVerticle kafkaEsVerticle = new KafkaEsVerticle();
         vertx.deployVerticle(kafkaEsVerticle);
 
-        Set<String> topicsAck = new HashSet<>();
-        topicsAck.add(AppProperties.getString("kafka-ack-topic"));
-        KafkaAckVerticle ackVerticle = new KafkaAckVerticle(config, topicsAck);
-        vertx.deployVerticle(ackVerticle);
+//        Set<String> topicsAck = new HashSet<>();
+//        topicsAck.add(AppProperties.getString("kafka-ack-topic"));
+//        KafkaAckVerticle ackVerticle = new KafkaAckVerticle(config, topicsAck);
+//        vertx.deployVerticle(ackVerticle);
 
         Set<String> topics = new HashSet<>();
         topics.add(AppProperties.getString("kafka-notification-topic"));
+        topics.add(AppProperties.getString("kafka-ack-topic"));
 
         KafkaNotificationVerticle kafkaNotificationVerticle = new KafkaNotificationVerticle(config,
                 topics,

@@ -31,15 +31,11 @@ public class KafkaAckVerticle extends AbstractVerticle  {
 
         kafkaConsumer = KafkaConsumer.create(vertx, this.config);
 
-
         kafkaConsumer.handler(this::ackConsumerHandler);
 
-        kafkaConsumer.subscribe(topics, new Handler<AsyncResult<Void>>() {
-            @Override
-            public void handle(AsyncResult<Void> event) {
-                if (logger.isInfoEnabled()) {
-                    logger.info(String.format("start consume notification ack %s", event.succeeded()));
-                }
+        this.kafkaConsumer.subscribe(this.topics, result -> {
+            if (logger.isInfoEnabled()) {
+                logger.info(String.format("start ack kafka consumer %s", Boolean.toString(result.succeeded())));
             }
         });
 

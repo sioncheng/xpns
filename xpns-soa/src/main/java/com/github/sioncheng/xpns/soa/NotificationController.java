@@ -11,6 +11,8 @@ import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -72,10 +74,10 @@ public class NotificationController {
                     notificationResult.setMessageId(notificationRequest.getUniqId());
                     if (e != null) {
                         notificationResult.setResult("error");
+
+                        logger.error("send notification error", e);
                     } else {
                         notificationResult.setResult("ok");
-
-
 
                         String topicEs =AppProperties.getString("kafka-es");
                         ProducerRecord<String, String> recordEs = new ProducerRecord<>(topicEs,
@@ -92,4 +94,6 @@ public class NotificationController {
 
         return result;
     }
+
+    private static final Logger logger = LoggerFactory.getLogger(NotificationController.class);
 }

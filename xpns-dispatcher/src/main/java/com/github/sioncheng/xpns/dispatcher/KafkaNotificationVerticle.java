@@ -121,17 +121,18 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
         this.kafkaConsumer.handler(this::kafkaConsumerHandler);
         this.kafkaConsumer.subscribe(this.topics, result -> {
             if (logger.isInfoEnabled()) {
-                logger.info(String.format("start kafka consumer %s", Boolean.toString(result.succeeded())));
+                logger.info(String.format("start notification kafka consumer %s", Boolean.toString(result.succeeded())));
             }
         });
     }
 
     private void kafkaConsumerHandler(KafkaConsumerRecord<String, String> record) {
         if (logger.isInfoEnabled()) {
-            logger.info(String.format("got message key %s, value %s, partition %d, offset %d", record.key(),
+            logger.info(String.format("got message key %s, value %s, partition %d, offset %d, topic %s", record.key(),
                     record.value(),
                     record.partition(),
-                    record.offset()));
+                    record.offset(),
+                    record.topic()));
         }
 
         NotificationEntity notificationEntity = null;
@@ -152,13 +153,20 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
             return;
         }
 
-        NotificationEntity entityEs = notificationEntity.clone();
-        entityEs.setStatus(NotificationEntity.DEQUEUE);
-        entityEs.setStatusDateTime(DateFormatUtils.format(new Date(), DateFormatPatterns.ISO8601_WITH_MS));
+        if (notificationEntity.getStatus() == NotificationEntity.NEW) {
+            NotificationEntity entityEs = notificationEntity.clone();
+            entityEs.setStatus(NotificationEntity.DEQUEUE);
+            entityEs.setStatusDateTime(DateFormatUtils.format(new Date(), DateFormatPatterns.ISO8601_WITH_MS));
 
-        vertx.eventBus().send(KafkaEsVerticle.NotificationEntityESEventAddress, JSON.toJSONString(entityEs));
+            vertx.eventBus().send(KafkaEsVerticle.NotificationEntityESEventAddress, JSON.toJSONString(entityEs));
 
-        this.sendNotification(notificationEntity, record);
+            this.sendNotification(notificationEntity, record);
+        } else {
+            NotificationEntity entityEs = notificationEntity.clone();
+            entityEs.setStatusDateTime(DateFormatUtils.format(new Date(), DateFormatPatterns.ISO8601_WITH_MS));
+
+            vertx.eventBus().send(KafkaEsVerticle.NotificationEntityESEventAddress, JSON.toJSONString(entityEs));
+        }
 
     }
 
@@ -200,6 +208,9 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
                                offlineNotificationEntity(entity, record);
                            }
                         });
+                    })
+                    .exceptionHandler(t -> {
+                        logger.warn(String.format("connect to %s error", service), t);
                     })
                     .write(Buffer.buffer(requestData)).end();
 
