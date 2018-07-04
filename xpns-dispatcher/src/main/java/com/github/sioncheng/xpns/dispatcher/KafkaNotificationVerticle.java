@@ -2,6 +2,7 @@ package com.github.sioncheng.xpns.dispatcher;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
+import com.github.sioncheng.xpns.common.date.DateFormatPatterns;
 import com.github.sioncheng.xpns.common.storage.NotificationEntity;
 import com.github.sioncheng.xpns.common.zk.Directories;
 import io.vertx.core.AbstractVerticle;
@@ -17,6 +18,7 @@ import io.vertx.kafka.client.common.TopicPartition;
 import io.vertx.kafka.client.consumer.KafkaConsumer;
 import io.vertx.kafka.client.consumer.KafkaConsumerRecord;
 import io.vertx.kafka.client.consumer.OffsetAndMetadata;
+import org.apache.commons.lang3.time.DateFormatUtils;
 import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.ZooKeeper;
@@ -148,6 +150,12 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
             return;
         }
 
+        NotificationEntity entityEs = notificationEntity.clone();
+        entityEs.setStatus(NotificationEntity.DEQUEUE);
+        entityEs.setStatusDateTime(DateFormatUtils.format(new Date(), DateFormatPatterns.ISO8601_WITH_MS));
+
+        vertx.eventBus().send(KafkaEsVerticle.NotificationEntityESEventAddress, JSON.toJSONString(entityEs));
+
         this.sendNotification(notificationEntity, record);
 
     }
@@ -155,6 +163,13 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
     private void offlineNotificationEntity(NotificationEntity entity,
                                            KafkaConsumerRecord<String, String> record) {
         //save to hbase
+
+        //log to es
+        NotificationEntity entityEs = entity.clone();
+        entityEs.setStatus(NotificationEntity.OFFLINE);
+        entityEs.setStatusDateTime(DateFormatUtils.format(new Date(), DateFormatPatterns.ISO8601_WITH_MS));
+        vertx.eventBus().send(KafkaEsVerticle.NotificationEntityESEventAddress, JSON.toJSONString(entityEs));
+
         kafkaConsumer.commit(generateCommitOffset(record));
     }
 
@@ -213,11 +228,19 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
                     .exceptionHandler(t -> {
                         logger.warn(t);
                     })
-                    .handler(response -> response.bodyHandler(resonseBody -> {
-                        String s = new String(resonseBody.getBytes());
+                    .handler(response -> response.bodyHandler(responseBody -> {
+                        String s = new String(responseBody.getBytes());
                         if (logger.isInfoEnabled()) {
                             logger.info(s);
                         }
+
+                        kafkaConsumer.commit(generateCommitOffset(record));
+
+                        NotificationEntity entityEs = entity.clone();
+                        entityEs.setStatus(NotificationEntity.SENT);
+                        entityEs.setStatusDateTime(DateFormatUtils.format(new Date(), DateFormatPatterns.ISO8601_WITH_MS));
+
+                        vertx.eventBus().send(KafkaEsVerticle.NotificationEntityESEventAddress, JSON.toJSONString(entityEs));
                     }))
                     .write(Buffer.buffer(requestData)).end();
         } catch (Exception ex) {

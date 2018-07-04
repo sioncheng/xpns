@@ -19,6 +19,9 @@ public class MainApp {
 
         Vertx vertx = Vertx.vertx();
 
+        KafkaEsVerticle kafkaEsVerticle = new KafkaEsVerticle();
+        vertx.deployVerticle(kafkaEsVerticle);
+
         Set<String> topicsAck = new HashSet<>();
         topicsAck.add(AppProperties.getString("kafka-ack-topic"));
         KafkaAckVerticle ackVerticle = new KafkaAckVerticle(config, topicsAck);

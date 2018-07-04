@@ -11,6 +11,16 @@ public class NotificationEntity {
     public static final int DELIVERED = 4;
     public static final int OFFLINE = 5;
 
+    public NotificationEntity clone() {
+        NotificationEntity notificationEntity = new NotificationEntity();
+        notificationEntity.setNotification(this.getNotification());
+        notificationEntity.setStatus(this.getStatus());
+        notificationEntity.setStatusDateTime(this.getStatusDateTime());
+        notificationEntity.setCreateDateTime(this.getCreateDateTime());
+        notificationEntity.setTtl(this.getTtl());
+
+        return notificationEntity;
+    }
 
     public Notification getNotification() {
         return notification;
@@ -36,6 +46,14 @@ public class NotificationEntity {
         this.createDateTime = createDateTime;
     }
 
+    public String getStatusDateTime() {
+        return statusDateTime;
+    }
+
+    public void setStatusDateTime(String statusDateTime) {
+        this.statusDateTime = statusDateTime;
+    }
+
     public int getTtl() {
         return ttl;
     }
@@ -47,6 +65,8 @@ public class NotificationEntity {
     private Notification notification;
 
     private int status;
+
+    private String statusDateTime;
 
     private String createDateTime;
 

@@ -50,6 +50,7 @@ public class NotificationController {
                     DateFormatPatterns.ISO8601_WITH_MS));
             notificationEntity.setTtl(3600);
             notificationEntity.setStatus(NotificationEntity.NEW);
+            notificationEntity.setStatusDateTime(notificationEntity.getCreateDateTime());
             Notification notification1 = new Notification();
             notification1.setUniqId(notificationRequest.getUniqId());
             notification1.setTo(notificationRequest.getTo());

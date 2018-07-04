@@ -83,7 +83,7 @@ public class ElasticsearchVerticle extends AbstractVerticle {
         doc.put("createDateTime", entity.getCreateDateTime());
         doc.put("ttl", entity.getTtl());
         doc.put("status", entity.getStatus());
-        doc.put("statusDateTime", DateFormatUtils.format(new Date(),DateFormatPatterns.ISO8601_WITH_MS));
+        doc.put("statusDateTime", entity.getStatusDateTime());
 
         try {
             byte[] postData = doc.toJSONString().getBytes("UTF-8");
