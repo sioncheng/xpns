@@ -57,7 +57,7 @@ public class KafkaEsVerticle extends AbstractVerticle {
         }
 
         KafkaProducerRecord<String, String> record =
-                new KafkaProducerRecordImpl<>(AppProperties.getString("kafka-es"), message.body());
+                new KafkaProducerRecordImpl<>(AppProperties.getString("kafka-es-topic"), message.body());
         this.kafkaProducerList.get(rand.nextInt(this.kafkaProducerList.size())).write(record);
     }
 

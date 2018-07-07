@@ -2,6 +2,7 @@ package com.github.sioncheng.xpnsserver;
 
 import com.alibaba.fastjson.JSON;
 import com.github.sioncheng.xpns.common.client.Notification;
+import com.github.sioncheng.xpns.common.client.SessionInfo;
 import com.github.sioncheng.xpns.common.storage.NotificationEntity;
 import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.KafkaProducer;
@@ -12,11 +13,12 @@ import org.slf4j.LoggerFactory;
 
 import java.util.Properties;
 
-public class KafkaNotificationAckManager {
+public class KafkaProducerManager {
 
-    public KafkaNotificationAckManager(Properties producerConfig, String ackTopic) {
+    public KafkaProducerManager(Properties producerConfig, String ackTopic, String logonTopic) {
         this.kafkaProducer = new KafkaProducer<>(producerConfig);
         this.ackTopic = ackTopic;
+        this.logonTopic = logonTopic;
     }
 
     public void notificationAck(Notification notification, boolean success) {
@@ -42,17 +44,36 @@ public class KafkaNotificationAckManager {
                     logger.warn(String.format("send notification ack error %s", value), e);
                 } else {
                     if (logger.isInfoEnabled()) {
-                        logger.info(String.format("kafka producer send callback %s", recordMetadata.topic()));
+                        logger.info(String.format("send notification ack callback %s", recordMetadata.topic()));
                     }
                 }
             }
         });
     }
 
+    public void logon(SessionInfo sessionInfo) {
+        final String value = JSON.toJSONString(sessionInfo);
+        ProducerRecord<String, String> producerRecord = new ProducerRecord<>(this.logonTopic, sessionInfo.getAcid(), value);
+
+        this.kafkaProducer.send(producerRecord, new Callback() {
+            @Override
+            public void onCompletion(RecordMetadata recordMetadata, Exception e) {
+                if (e != null) {
+                    logger.warn(String.format("send logon event error %s", value), e);
+                } else {
+                    if (logger.isInfoEnabled()) {
+                        logger.info(String.format("send logon callback %s", recordMetadata.topic()));
+                    }
+                }
+            }
+        });
+    }
 
     private KafkaProducer<String, String> kafkaProducer;
 
     private String ackTopic;
 
-    private Logger logger = LoggerFactory.getLogger(KafkaNotificationAckManager.class);
+    private String logonTopic;
+
+    private Logger logger = LoggerFactory.getLogger(KafkaProducerManager.class);
 }

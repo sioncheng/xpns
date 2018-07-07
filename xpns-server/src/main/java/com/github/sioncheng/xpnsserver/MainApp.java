@@ -26,8 +26,9 @@ public class MainApp {
             properties.put(entry.getKey(), entry.getValue());
         }
 
-        KafkaNotificationAckManager kafkaNotificationManager = new KafkaNotificationAckManager(properties,
-                AppProperties.getString("kafka-ack-topic"));
+        KafkaProducerManager kafkaNotificationManager = new KafkaProducerManager(properties,
+                AppProperties.getString("kafka-ack-topic"),
+                AppProperties.getString("kafka-logon-topic"));
 
 
         XpnsServerConfig xpnsServerConfig = new XpnsServerConfig();

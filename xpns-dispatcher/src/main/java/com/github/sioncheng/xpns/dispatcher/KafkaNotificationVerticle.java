@@ -2,6 +2,9 @@ package com.github.sioncheng.xpns.dispatcher;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
+import com.github.sioncheng.xpns.common.client.Notification;
+import com.github.sioncheng.xpns.common.client.SessionInfo;
+import com.github.sioncheng.xpns.common.config.AppProperties;
 import com.github.sioncheng.xpns.common.date.DateFormatPatterns;
 import com.github.sioncheng.xpns.common.storage.NotificationEntity;
 import com.github.sioncheng.xpns.common.zk.Directories;
@@ -18,7 +21,12 @@ import io.vertx.kafka.client.common.TopicPartition;
 import io.vertx.kafka.client.consumer.KafkaConsumer;
 import io.vertx.kafka.client.consumer.KafkaConsumerRecord;
 import io.vertx.kafka.client.consumer.OffsetAndMetadata;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.time.DateFormatUtils;
+import org.apache.hadoop.hbase.TableName;
+import org.apache.hadoop.hbase.client.*;
+import org.apache.hadoop.hbase.filter.CompareFilter;
+import org.apache.hadoop.hbase.filter.SingleColumnValueFilter;
 import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.ZooKeeper;
@@ -135,6 +143,14 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
                     record.topic()));
         }
 
+        if (AppProperties.getString("kafka-logon-topic").equals(record.topic())) {
+            this.kafkaConsumerLogonHandler(record);
+        } else {
+            this.kafkaConsumerNotificationHandler(record);
+        }
+    }
+
+    private void kafkaConsumerNotificationHandler(KafkaConsumerRecord<String, String> record) {
         NotificationEntity notificationEntity = null;
         try {
             notificationEntity = JSON.parseObject(record.value(), NotificationEntity.class);
@@ -166,6 +182,14 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
             entityEs.setStatusDateTime(DateFormatUtils.format(new Date(), DateFormatPatterns.ISO8601_WITH_MS));
 
             vertx.eventBus().send(KafkaEsVerticle.NotificationEntityESEventAddress, JSON.toJSONString(entityEs));
+
+            if (notificationEntity.getStatus() == NotificationEntity.DELIVERED) {
+                NotificationEntity notificationHbase = notificationEntity.clone();
+                notificationHbase.setStatus(NotificationEntity.DELIVERED);
+                notificationHbase.setStatusDateTime(DateFormatUtils.format(new Date(), DateFormatPatterns.ISO8601_WITH_MS));
+
+                putToHBase(notificationHbase);
+            }
         }
 
     }
@@ -173,14 +197,67 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
     private void offlineNotificationEntity(NotificationEntity entity,
                                            KafkaConsumerRecord<String, String> record) {
         //save to hbase
+        vertx.executeBlocking(future -> {
+            NotificationEntity notificationHbase = entity.clone();
+            notificationHbase.setStatus(NotificationEntity.OFFLINE);
+            notificationHbase.setStatusDateTime(DateFormatUtils.format(new Date(), DateFormatPatterns.ISO8601_WITH_MS));
 
-        //log to es
-        NotificationEntity entityEs = entity.clone();
-        entityEs.setStatus(NotificationEntity.OFFLINE);
-        entityEs.setStatusDateTime(DateFormatUtils.format(new Date(), DateFormatPatterns.ISO8601_WITH_MS));
-        vertx.eventBus().send(KafkaEsVerticle.NotificationEntityESEventAddress, JSON.toJSONString(entityEs));
+            Exception exception = putToHBase(notificationHbase);
+            if (exception == null) {
+                future.complete();
+            } else {
+                future.fail(exception);
+            }
+        },
+        true,
+        result -> {
+            //log to es
+            NotificationEntity entityEs = entity.clone();
+            entityEs.setStatus(NotificationEntity.OFFLINE);
+            entityEs.setStatusDateTime(DateFormatUtils.format(new Date(), DateFormatPatterns.ISO8601_WITH_MS));
+            vertx.eventBus().send(KafkaEsVerticle.NotificationEntityESEventAddress, JSON.toJSONString(entityEs));
+            if (result.succeeded()) {
+                kafkaConsumer.commit(generateCommitOffset(record));
+            }
+        });
 
-        kafkaConsumer.commit(generateCommitOffset(record));
+
+    }
+
+    private Exception putToHBase(NotificationEntity entity)  {
+        Exception exception = null;
+        try {
+            Notification notification = entity.getNotification();
+
+            String rowKey = StringUtils.reverse(notification.getTo()) +
+                    notification.getUniqId();
+            Put put = new Put(rowKey.getBytes());
+
+            byte[] family = "cf".getBytes();
+
+            put.addColumn(family, "to".getBytes(), notification.getTo().getBytes());
+            put.addColumn(family, "ttl".getBytes(), String.valueOf(entity.getTtl()).getBytes());
+            if (StringUtils.isNotEmpty(entity.getCreateDateTime())) {
+                put.addColumn(family, "createDateTime".getBytes(), entity.getCreateDateTime().getBytes());
+            }
+            put.addColumn(family, "status".getBytes(), String.valueOf(entity.getStatus()).getBytes());
+            put.addColumn(family, "statusDateTime".getBytes(), entity.getStatusDateTime().getBytes());
+            put.addColumn(family, "notification".getBytes(), notification.toJSONObject().toJSONString().getBytes("UTF-8"));
+
+
+            Connection connection = ConnectionFactory.createConnection();
+
+            Table table = connection.getTable(TableName.valueOf("notification"));
+            table.put(put);
+            table.close();
+            connection.close();
+
+        } catch (Exception ex) {
+            logger.warn("do real save error", ex);
+            exception = ex;
+        }
+
+        return exception;
     }
 
     private void sendNotification(final NotificationEntity entity,
@@ -240,6 +317,8 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
                     .putHeader("Content-Length", String.valueOf(requestData.length))
                     .exceptionHandler(t -> {
                         logger.warn(t);
+
+                        offlineNotificationEntity(entity, record);
                     })
                     .handler(response -> response.bodyHandler(responseBody -> {
                         String s = new String(responseBody.getBytes());
@@ -254,6 +333,8 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
                         entityEs.setStatusDateTime(DateFormatUtils.format(new Date(), DateFormatPatterns.ISO8601_WITH_MS));
 
                         vertx.eventBus().send(KafkaEsVerticle.NotificationEntityESEventAddress, JSON.toJSONString(entityEs));
+
+                        putToHBase(entityEs);
                     }))
                     .write(Buffer.buffer(requestData)).end();
         } catch (Exception ex) {
@@ -277,6 +358,148 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
         offsets.put(topicPartition, offsetAndMetadata);
 
         return offsets;
+    }
+
+    private void kafkaConsumerLogonHandler(KafkaConsumerRecord<String, String> record) {
+        SessionInfo sessionInfo = JSON.parseObject(record.value(), SessionInfo.class);
+
+        if (sessionInfo == null) {
+            logger.warn(String.format("unable to parse session info %s", record.value()));
+            return;
+        }
+
+        vertx.executeBlocking(future -> {
+            Exception ex = mayResendNotification(sessionInfo);
+            if (ex == null) {
+                future.complete();
+            } else {
+                future.fail(ex);
+            }
+        },
+        true,
+        result -> {
+            if (result.succeeded()) {
+                if (logger.isInfoEnabled()) {
+                    logger.info("may resend notification success");
+                }
+            } else {
+                logger.warn("may resend notification error", result.cause());
+            }
+        });
+    }
+
+    private Exception mayResendNotification(SessionInfo sessionInfo) {
+        Exception exception = null;
+        Connection connection = null;
+        Table table = null;
+        ResultScanner scanner = null;
+        try {
+            Scan scan = new Scan();
+            scan.setRowPrefixFilter(StringUtils.reverse(sessionInfo.getAcid()).getBytes());
+            SingleColumnValueFilter statusFilter = new SingleColumnValueFilter("cf".getBytes(),
+                    "status".getBytes(),
+                    CompareFilter.CompareOp.EQUAL,
+                    String.valueOf(NotificationEntity.OFFLINE).getBytes());
+            scan.setFilter(statusFilter);
+
+            connection = ConnectionFactory.createConnection();
+
+            table = connection.getTable(TableName.valueOf("notification"));
+
+            scanner = table.getScanner(scan);
+
+            byte[] family = "cf".getBytes();
+            byte[] toQualifier = "to".getBytes();
+            byte[] createDateTimeQualifier = "createDateTime".getBytes();
+            byte[] ttlQualifier = "ttl".getBytes();
+            byte[] statusQualifier = "status".getBytes();
+            byte[] statusDateTimeQualifier = "statusDateTime".getBytes();
+            byte[] notificationQualifier = "notification".getBytes();
+
+            Result result = scanner.next();
+            while (result != null) {
+                NotificationEntity offlineEntity = new NotificationEntity();
+                String to = HBaseHelper.getValue(result, family, toQualifier);
+                String createDateTime = HBaseHelper.getValue(result, family, createDateTimeQualifier);
+                int ttl = Integer.parseInt(HBaseHelper.getValue(result, family, ttlQualifier));
+                int status = Integer.parseInt(HBaseHelper.getValue(result, family, statusQualifier));
+                String statusDateTime = HBaseHelper.getValue(result, family, statusDateTimeQualifier);
+                String notification = HBaseHelper.getValue(result, family, notificationQualifier);
+
+                offlineEntity.setStatus(status);
+                offlineEntity.setStatusDateTime(statusDateTime);
+                offlineEntity.setTtl(ttl);
+                offlineEntity.setCreateDateTime(createDateTime);
+                offlineEntity.setNotification(JSON.parseObject(notification, Notification.class));
+
+                NotificationEntity entityEs = offlineEntity.clone();
+                entityEs.setStatus(NotificationEntity.RESEND);
+                entityEs.setStatusDateTime(DateFormatUtils.format(new Date(), DateFormatPatterns.ISO8601_WITH_MS));
+
+                vertx.eventBus().send(KafkaEsVerticle.NotificationEntityESEventAddress, JSON.toJSONString(entityEs));
+
+                resendNotification(offlineEntity, sessionInfo);
+
+                result = scanner.next();
+            }
+            scanner.close();
+            table.close();
+        } catch (Exception ex) {
+            logger.warn("kafka consumer logon handler error", ex);
+
+            if (scanner != null) {
+                scanner.close();
+            }
+            if (table != null) {
+                try {
+                    table.close();
+                } catch (Exception ex1) {}
+            }
+            if (connection != null) {
+                try {
+                    connection.close();
+                } catch (Exception ex2) {}
+            }
+
+            exception = ex;
+        }
+
+        return exception;
+    }
+
+    private void resendNotification(NotificationEntity entity, SessionInfo sessionInfo) {
+        try {
+
+            byte[] requestData = entity.getNotification().toJSONObject().toJSONString()
+                    .getBytes("UTF-8");
+
+            HttpClient httpClient = vertx.createHttpClient();
+            httpClient.post(sessionInfo.getPort(), sessionInfo.getServer(), "/notification")
+                    .putHeader("Content-Type", "application/json;charset=UTF-8")
+                    .putHeader("Content-Length", String.valueOf(requestData.length))
+                    .exceptionHandler(t -> {
+                        logger.warn(t);
+                    })
+                    .handler(response -> response.bodyHandler(responseBody -> {
+                        String s = new String(responseBody.getBytes());
+                        if (logger.isInfoEnabled()) {
+                            logger.info(s);
+                        }
+
+                        NotificationEntity entityEs = entity.clone();
+                        entityEs.setStatus(NotificationEntity.SENT);
+                        entityEs.setStatusDateTime(DateFormatUtils.format(new Date(), DateFormatPatterns.ISO8601_WITH_MS));
+
+                        vertx.eventBus().send(KafkaEsVerticle.NotificationEntityESEventAddress, JSON.toJSONString(entityEs));
+
+                        putToHBase(entityEs);
+                    }))
+                    .write(Buffer.buffer(requestData)).end();
+        } catch (Exception ex) {
+            String message = String.format("send notification error %s",
+                    entity.getNotification().toJSONObject().toJSONString());
+            logger.warn(message, ex);
+        }
     }
 
     private Map<String, String> config;

@@ -10,6 +10,7 @@ public class NotificationEntity {
     public static final int UNDELIVER = 3;
     public static final int DELIVERED = 4;
     public static final int OFFLINE = 5;
+    public static final int RESEND = 6;
 
     public NotificationEntity clone() {
         NotificationEntity notificationEntity = new NotificationEntity();

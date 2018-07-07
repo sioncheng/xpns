@@ -190,7 +190,7 @@ public class ServerTest {
         return xpnsServerConfig;
     }
 
-    private KafkaNotificationAckManager createNotificationManager() {
+    private KafkaProducerManager createNotificationManager() {
 
         Properties properties = new Properties();
         properties.put("bootstrap.servers", "localhost:9092");
@@ -198,7 +198,9 @@ public class ServerTest {
         properties.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
         properties.put("acks", "1");
 
-        KafkaNotificationAckManager notificationManager = new KafkaNotificationAckManager(properties, "xpns-ack");
+        KafkaProducerManager notificationManager = new KafkaProducerManager(properties,
+                "xpns-ack",
+                "xpns-logon");
 
         return notificationManager;
     }

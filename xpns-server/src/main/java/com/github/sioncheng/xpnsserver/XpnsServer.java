@@ -34,11 +34,11 @@ public class XpnsServer implements ClientChannelEventListener {
 
     public XpnsServer(XpnsServerConfig serverConfig,
                       SessionManager sessionManager,
-                      KafkaNotificationAckManager notificationManager,
+                      KafkaProducerManager kafkaProducerManager,
                       String zkServers) {
         this.serverConfig = serverConfig;
         this.sessionManager = sessionManager;
-        this.notificationManager = notificationManager;
+        this.kafkaProducerManager = kafkaProducerManager;
         this.zkServers = zkServers;
         this.stop = false;
     }
@@ -121,7 +121,7 @@ public class XpnsServer implements ClientChannelEventListener {
             if (logger.isWarnEnabled()) {
                 logger.warn("client does not exists {}", notification.getTo());
             }
-            this.notificationManager.notificationAck(notification, false);
+            this.kafkaProducerManager.notificationAck(notification, false);
         } else {
             int i = Math.abs(notification.getTo().hashCode()) % this.notificationTasksList.size();
             this.notificationTasksList.get(i).add(notification);
@@ -280,13 +280,13 @@ public class XpnsServer implements ClientChannelEventListener {
         this.sessionManager.removeClient(acid, this.serverConfig.getApiServer());
         Notification notification = this.sendingNotifications.remove(acid);
         if (notification != null) {
-            notificationManager.notificationAck(notification, false);
+            kafkaProducerManager.notificationAck(notification, false);
         }
         ConcurrentLinkedQueue<Notification> queue = this.queuingNotifications.remove(acid);
         if (queue != null && queue.size() > 0) {
             for (Notification element :
                     queue) {
-                notificationManager.notificationAck(element, false);
+                kafkaProducerManager.notificationAck(element, false);
             }
         }
     }
@@ -409,6 +409,8 @@ public class XpnsServer implements ClientChannelEventListener {
             this.sessionManager.putClient(sessionInfo);
             this.clientChannels.put(jsonCommand.getAcid(), clientChannel);
 
+            this.kafkaProducerManager.logon(sessionInfo);
+
             if (logger.isInfoEnabled()) {
                 logger.info("client login {}", jsonCommand.getAcid());
             }
@@ -426,7 +428,7 @@ public class XpnsServer implements ClientChannelEventListener {
         Notification notification = new Notification();
         notification.fromJSONObject(jsonObject);
 
-        this.notificationManager.notificationAck(notification, true);
+        this.kafkaProducerManager.notificationAck(notification, true);
 
         this.sendingNotifications.remove(acid);
 
@@ -446,7 +448,7 @@ public class XpnsServer implements ClientChannelEventListener {
         ClientChannel clientChannel = this.clientChannels.get(notification.getTo());
         if (clientChannel == null) {
             logger.warn("client does not exist {}", notification.getTo());
-            this.notificationManager.notificationAck(notification, false);
+            this.kafkaProducerManager.notificationAck(notification, false);
             return;
         }
 
@@ -456,7 +458,7 @@ public class XpnsServer implements ClientChannelEventListener {
             if (queuingNotifications.containsKey(clientChannel.getAcid())) {
                 queue = queuingNotifications.get(clientChannel.getAcid());
                 if (queue.size() > 10) {
-                    this.notificationManager.notificationAck(notification, false);
+                    this.kafkaProducerManager.notificationAck(notification, false);
 
                     if (logger.isInfoEnabled()) {
                         logger.info("client queue is full {}", notification.getTo());
@@ -517,7 +519,7 @@ public class XpnsServer implements ClientChannelEventListener {
 
     private XpnsServerConfig serverConfig;
     private SessionManager sessionManager;
-    private KafkaNotificationAckManager notificationManager;
+    private KafkaProducerManager kafkaProducerManager;
     private String zkServers;
     private ZooKeeper zooKeeper;
 
