@@ -16,14 +16,8 @@ public class Beans {
     public KafkaProducer<String, String> createKafkaProducer() {
 
         Map<String, String> config = AppProperties.getPropertiesWithPrefix("kafka.producer.");
-        Properties properties = new Properties();
-        for (Map.Entry<String, String> kv :
-                config.entrySet()) {
-            properties.put(kv.getKey(), kv.getValue());
-        }
 
-
-        KafkaProducer<String, String> kafkaProducer = new KafkaProducer(properties);
+        KafkaProducer<String, String> kafkaProducer = new KafkaProducer(config);
 
         return kafkaProducer;
     }

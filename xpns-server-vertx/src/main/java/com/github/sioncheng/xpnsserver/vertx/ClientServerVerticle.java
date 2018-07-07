@@ -29,7 +29,8 @@ public class ClientServerVerticle extends AbstractVerticle {
     public ClientServerVerticle(int id, int port, int maxClients, int instances,
                                 RedisOptions redisOptions, String apiHost, int apiPort,
                                 Map<String, String> kafakProducerConfig,
-                                String notificationAckTopic) {
+                                String notificationAckTopic,
+                                String logonTopic) {
         this.id = id;
         this.port = port;
         this.maxClients = maxClients;
@@ -39,6 +40,7 @@ public class ClientServerVerticle extends AbstractVerticle {
         this.apiPort = apiPort;
         this.kafkaProducerConfig = kafakProducerConfig;
         this.notificationAckTopic = notificationAckTopic;
+        this.logonTopic = logonTopic;
         this.clientsCounter = 0;
         this.logonCounter = 0;
         this.clientVerticleTable1 = new HashMap<>();
@@ -152,9 +154,11 @@ public class ClientServerVerticle extends AbstractVerticle {
         sessionInfo.setServer(this.apiHost);
         sessionInfo.setPort(this.apiPort);
 
+        String sessionInfoJson = JSON.toJSONString(sessionInfo);
+
         final String onlineKey = RedisHelper.generateOnlineKey(sessionInfo.getAcid());
         this.redisClient.set(onlineKey,
-                JSON.toJSONString(sessionInfo),
+                sessionInfoJson,
                 result ->{
                     if (result.succeeded()) {
                         this.redisClient.expire(onlineKey, 3600, null);
@@ -205,6 +209,12 @@ public class ClientServerVerticle extends AbstractVerticle {
                         JSON.toJSONString(logonForward));
             }
         }
+        //
+        KafkaProducerRecord<String, String> logonEvent =
+                new KafkaProducerRecordImpl<>(this.logonTopic,
+                        event.getAcid(),
+                        sessionInfoJson);
+        this.kafkaProducer.write(logonEvent);
     }
 
     private void handleSocketClose(ClientEvent event) {
@@ -283,6 +293,7 @@ public class ClientServerVerticle extends AbstractVerticle {
     private int apiPort;
     private Map<String, String> kafkaProducerConfig;
     private String notificationAckTopic;
+    private String logonTopic;
 
     private RedisClient redisClient;
 

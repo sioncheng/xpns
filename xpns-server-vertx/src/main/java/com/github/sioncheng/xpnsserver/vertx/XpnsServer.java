@@ -44,6 +44,7 @@ public class XpnsServer extends AbstractVerticle {
 
         Map<String, String> kafkaProducerConfig = AppProperties.getPropertiesWithPrefix("kafka.producer.");
         String notifcationAckTopic = AppProperties.getString("kafka-ack-topic");
+        String logonTopic = AppProperties.getString("kafka-logon-topic");
 
         int i = 0;
         for (; i < this.serverConfig.getClientInstances() - 1; i++){
@@ -55,7 +56,8 @@ public class XpnsServer extends AbstractVerticle {
                     this.serverConfig.getApiHost(),
                     this.serverConfig.getApiPort(),
                     kafkaProducerConfig,
-                    notifcationAckTopic);
+                    notifcationAckTopic,
+                    logonTopic);
             vertx.deployVerticle(verticle);
         }
 
@@ -67,7 +69,8 @@ public class XpnsServer extends AbstractVerticle {
                 this.serverConfig.getApiHost(),
                 this.serverConfig.getApiPort(),
                 kafkaProducerConfig,
-                notifcationAckTopic);
+                notifcationAckTopic,
+                logonTopic);
         vertx.deployVerticle(verticle);
     }
 

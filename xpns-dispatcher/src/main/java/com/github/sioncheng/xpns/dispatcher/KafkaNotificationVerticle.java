@@ -151,6 +151,10 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
     }
 
     private void kafkaConsumerNotificationHandler(KafkaConsumerRecord<String, String> record) {
+        if (logger.isInfoEnabled()) {
+            logger.info(String.format("notification handler %s", record.value()));
+        }
+
         NotificationEntity notificationEntity = null;
         try {
             notificationEntity = JSON.parseObject(record.value(), NotificationEntity.class);
@@ -170,6 +174,10 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
         }
 
         if (notificationEntity.getStatus() == NotificationEntity.NEW) {
+            if (logger.isInfoEnabled()) {
+                logger.info(String.format("dispatch new notification %s",
+                        notificationEntity.getNotification().toJSONObject().toString()));
+            }
             NotificationEntity entityEs = notificationEntity.clone();
             entityEs.setStatus(NotificationEntity.DEQUEUE);
             entityEs.setStatusDateTime(DateFormatUtils.format(new Date(), DateFormatPatterns.ISO8601_WITH_MS));
@@ -178,6 +186,10 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
 
             this.sendNotification(notificationEntity, record);
         } else {
+            if (logger.isInfoEnabled()) {
+                logger.info(String.format("dispatch notification status %s",
+                        notificationEntity.getNotification().toJSONObject().toString()));
+            }
             NotificationEntity entityEs = notificationEntity.clone();
             entityEs.setStatusDateTime(DateFormatUtils.format(new Date(), DateFormatPatterns.ISO8601_WITH_MS));
 

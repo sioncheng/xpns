@@ -42,7 +42,7 @@ public class ElasticsearchVerticle extends AbstractVerticle {
 
         kafkaConsumer = KafkaConsumer.create(vertx, consumerConfig);
         kafkaConsumer.handler(this::kafkaConsumerHandler);
-        kafkaConsumer.subscribe(AppProperties.getString("kafka-es"), result -> {
+        kafkaConsumer.subscribe(AppProperties.getString("kafka-es-topic"), result -> {
             if (logger.isInfoEnabled()) {
                 logger.info(String.format("start consumer for es %s", result.succeeded()));
             }

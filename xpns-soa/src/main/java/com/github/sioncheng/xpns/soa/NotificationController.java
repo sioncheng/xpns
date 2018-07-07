@@ -23,6 +23,8 @@ import org.springframework.web.context.request.async.DeferredResult;
 
 import java.util.Date;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 @Controller
 public class NotificationController {
@@ -62,6 +64,10 @@ public class NotificationController {
             notificationEntity.setNotification(notification1);
             notificationEntity.setTtl(notificationRequest.getTtl());
 
+
+
+            sentNotificationEs(notificationEntity);
+
             String topic = AppProperties.getString("kafka-notification-topic");
             ProducerRecord<String, String> record = new ProducerRecord<>(topic,
                     notificationRequest.getTo(),
@@ -78,13 +84,6 @@ public class NotificationController {
                         logger.error("send notification error", e);
                     } else {
                         notificationResult.setResult("ok");
-
-                        String topicEs =AppProperties.getString("kafka-es");
-                        ProducerRecord<String, String> recordEs = new ProducerRecord<>(topicEs,
-                                notificationRequest.getTo(),
-                                JSON.toJSONString(notificationEntity));
-
-                        kafkaProducer.send(recordEs);
                     }
 
                     result.setResult(notificationResult);
@@ -95,5 +94,26 @@ public class NotificationController {
         return result;
     }
 
+    private void sentNotificationEs(NotificationEntity entity) {
+        executor.submit(new Runnable() {
+            @Override
+            public void run() {
+                NotificationEntity notificationEntityEs = entity.clone();
+                notificationEntityEs.setStatus(NotificationEntity.NEW);
+                notificationEntityEs.setStatusDateTime(DateFormatUtils.format(new Date(), DateFormatPatterns.ISO8601_WITH_MS));
+
+                String topic = AppProperties.getString("kafka-es-topic");
+                ProducerRecord<String, String> record = new ProducerRecord<>(topic,
+                        notificationEntityEs.getNotification().getTo(),
+                        JSON.toJSONString(notificationEntityEs));
+
+                kafkaProducer.send(record);
+            }
+        });
+    }
+
     private static final Logger logger = LoggerFactory.getLogger(NotificationController.class);
+
+    private static final ExecutorService executor =
+            Executors.newFixedThreadPool(1);
 }
