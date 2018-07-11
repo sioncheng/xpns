@@ -8,6 +8,7 @@ import com.github.sioncheng.xpns.common.protocol.CommandUtil;
 import com.github.sioncheng.xpns.common.protocol.JsonCommand;
 import com.github.sioncheng.xpns.common.vertx.CommandCodec;
 import io.vertx.core.AbstractVerticle;
+import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.eventbus.Message;
 import io.vertx.core.eventbus.MessageConsumer;
@@ -17,16 +18,18 @@ import io.vertx.core.net.NetSocket;
 
 import java.io.UnsupportedEncodingException;
 import java.util.List;
+import java.util.UUID;
 
-public class ClientVerticle extends AbstractVerticle {
+public class ClientVerticle {
 
-    public ClientVerticle(int serverId, String clientEventAddress, NetSocket netSocket) {
+    public ClientVerticle(Vertx vertx, int serverId, String clientEventAddress, NetSocket netSocket) {
+        this.vertx = vertx;
         this.serverId = serverId;
         this.clientEventAddress = clientEventAddress;
         this.netSocket = netSocket;
         this.commandCodec = new CommandCodec();
         this.status = NEW;
-
+        this.deploymentId = UUID.randomUUID().toString();
 
         this.netSocket.handler(this::socketHandler);
         this.netSocket.exceptionHandler(this::socketExceptionHandler);
@@ -34,8 +37,12 @@ public class ClientVerticle extends AbstractVerticle {
 
     }
 
-    @Override
-    public void start() throws Exception {
+    public String deploymentID() {
+        return this.deploymentId;
+    }
+
+
+    public void start() {
 
         if (logger.isInfoEnabled()) {
             logger.info(String.format("client verticle start %s", this.deploymentID()));
@@ -53,11 +60,9 @@ public class ClientVerticle extends AbstractVerticle {
 
         netSocket.resume();
 
-        super.start();
     }
 
-    @Override
-    public void stop() throws Exception {
+    public void stop()  {
 
         if (this.netSocket != null) {
             this.netSocket.close();
@@ -74,15 +79,9 @@ public class ClientVerticle extends AbstractVerticle {
 
         this.publishNotificationEventAddressOnOff(false);
 
-        if (this.notificationConsumer != null) {
-            this.notificationConsumer.unregister();
-        }
-
         if (logger.isInfoEnabled()) {
             logger.info(String.format("client verticle stop %s",  this.acid));
         }
-
-        super.stop();
     }
 
     private void socketHandler(Buffer buffer) {
@@ -246,6 +245,7 @@ public class ClientVerticle extends AbstractVerticle {
         this.writeCommand(jsonCommand, Command.REQUEST);
     }
 
+    private Vertx vertx;
     private int serverId;
     private String clientEventAddress;
     private String notificationEventAddress;
@@ -253,7 +253,7 @@ public class ClientVerticle extends AbstractVerticle {
     private CommandCodec commandCodec;
     private String acid;
 
-    private MessageConsumer<String> notificationConsumer;
+    private String deploymentId;
 
     private int status;
 

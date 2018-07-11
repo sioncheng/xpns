@@ -96,22 +96,15 @@ public class ClientServerVerticle extends AbstractVerticle {
 
         netSocket.pause();
 
-        ClientVerticle clientVerticle = new ClientVerticle(this.id, this.clientEventAddress, netSocket);
-        vertx.deployVerticle(clientVerticle, result -> {
-            if (result.succeeded()) {
-                if (logger.isInfoEnabled()) {
-                    logger.info(String.format("deploy client success %s", result.result()));
-                    ClientVerticleEntity cce = new ClientVerticleEntity();
-                    cce.setAcid("");
-                    cce.setDeploymentId(result.result());
-                    cce.setClientVerticle(clientVerticle);
-                    this.clientVerticleTable1.put(result.result(), cce);
-                }
-            } else {
-                logger.warn("deploy client verticle failure");
-            }
-        });
+        ClientVerticle clientVerticle = new ClientVerticle(vertx, this.id, this.clientEventAddress, netSocket);
 
+        ClientVerticleEntity cce = new ClientVerticleEntity();
+        cce.setAcid("");
+        cce.setDeploymentId(clientVerticle.deploymentID());
+        cce.setClientVerticle(clientVerticle);
+        this.clientVerticleTable1.put(cce.getDeploymentId(), cce);
+
+        clientVerticle.start();
     }
 
     private void clientEventHandler(Message<String> msg) {
@@ -185,12 +178,8 @@ public class ClientServerVerticle extends AbstractVerticle {
 
         if (cce != null) {
             cce.setAcid(event.getAcid());
-
-            cce2 = new ClientVerticleEntity();
-            cce2.setAcid(event.getAcid());
-            cce2.setDeploymentId(event.getDeploymentId());
-            cce2.setClientVerticle(cce.getClientVerticle());
-            this.clientVerticleTable2.put(cce2.getAcid(), cce2);
+            cce.setDeploymentId(event.getDeploymentId());
+            this.clientVerticleTable2.put(cce.getAcid(), cce);
         } else {
             logger.warn(String.format("unable to find deployed client verticle %s %s",
                     event.getDeploymentId(),
@@ -228,10 +217,16 @@ public class ClientServerVerticle extends AbstractVerticle {
                     event.getAcid(),
                     event.getDeploymentId()));
         }
+
         this.clientsCounter--;
+
+        ClientVerticle clientVerticle = null;
+
         if (StringUtils.isNotEmpty(event.getDeploymentId())) {
-            this.clientVerticleTable1.remove(event.getDeploymentId());
-            vertx.undeploy(event.getDeploymentId());
+            ClientVerticleEntity entity = this.clientVerticleTable1.remove(event.getDeploymentId());
+            if (entity != null) {
+                clientVerticle = entity.getClientVerticle();
+            }
             if (logger.isInfoEnabled()) {
                 logger.info(String.format("undeploy client verticle %s %s",
                         event.getAcid(),
@@ -239,7 +234,10 @@ public class ClientServerVerticle extends AbstractVerticle {
             }
         }
         if (StringUtils.isNotEmpty(event.getAcid())) {
-            this.clientVerticleTable2.remove(event.getAcid());
+            ClientVerticleEntity entity = this.clientVerticleTable2.remove(event.getAcid());
+            if (entity != null) {
+                clientVerticle = entity.getClientVerticle();
+            }
             this.redisClient.del(RedisHelper.generateOnlineKey(event.getAcid()), null);
             if (logger.isInfoEnabled()) {
                 logger.info(String.format("remove client %s %s",
@@ -248,6 +246,9 @@ public class ClientServerVerticle extends AbstractVerticle {
             }
         }
 
+        if (clientVerticle != null) {
+            clientVerticle.stop();
+        }
     }
 
     private void handleClientVerticleStop(ClientEvent event) {
