@@ -26,6 +26,12 @@ public class ClientVerticle extends AbstractVerticle {
         this.netSocket = netSocket;
         this.commandCodec = new CommandCodec();
         this.status = NEW;
+
+
+        this.netSocket.handler(this::socketHandler);
+        this.netSocket.exceptionHandler(this::socketExceptionHandler);
+        this.netSocket.closeHandler(this::socketCloseHandler);
+
     }
 
     @Override
@@ -35,9 +41,7 @@ public class ClientVerticle extends AbstractVerticle {
             logger.info(String.format("client verticle start %s", this.deploymentID()));
         }
 
-        this.netSocket.handler(this::socketHandler);
-        this.netSocket.exceptionHandler(this::socketExceptionHandler);
-        this.netSocket.closeHandler(this::socketCloseHandler);
+        this.status = START;
 
         ClientEvent event = new ClientEvent();
         event.setAcid(this.acid);
@@ -46,6 +50,8 @@ public class ClientVerticle extends AbstractVerticle {
         event.setEventType(ClientEvent.START);
 
         vertx.eventBus().send(clientEventAddress, JSON.toJSONString(event));
+
+        netSocket.resume();
 
         super.start();
     }
@@ -147,7 +153,11 @@ public class ClientVerticle extends AbstractVerticle {
 
         ClientEvent event = new ClientEvent();
         event.setAcid(this.acid);
-        event.setDeploymentId(this.deploymentID());
+        if (this.status == START) {
+            event.setDeploymentId(this.deploymentID());
+        } else {
+            event.setDeploymentId("");
+        }
         event.setCommandObject(jsonCommand.getCommandObject());
         event.setEventType(ClientEvent.LOGON);
 
@@ -248,8 +258,9 @@ public class ClientVerticle extends AbstractVerticle {
     private int status;
 
     private static final int NEW = 0;
-    private static final int LOGON = 1;
-    private static final int STOP = 2;
+    private static final int START = 1;
+    private static final int LOGON = 2;
+    private static final int STOP = 3;
 
     private static final Logger logger = LoggerFactory.getLogger(ClientVerticle.class);
 

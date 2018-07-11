@@ -11,7 +11,7 @@
     <appender name="FILE" class= "ch.qos.logback.core.rolling.RollingFileAppender">
         <!-- 按天来回滚，如果需要按小时来回滚，则设置为{yyyy-MM-dd_HH} -->
         <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
-            <fileNamePattern>${logs.dir}/client.%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <fileNamePattern>${logs.dir}/client.%d{yyyy-MM-dd_HH}.%i.log</fileNamePattern>
             <!-- 如果按天来回滚，则最大保存时间为1天，1天之前的都将被清理掉 -->
             <maxHistory>10</maxHistory>
             <maxFileSize>20MB</maxFileSize>
@@ -37,7 +37,7 @@
     </appender>
 
     <root level="INFO">
-        <appender-ref ref="STDOUT" />
+        <appender-ref ref="${log.stdout}" />
         <appender-ref ref="ASYNC" />
     </root>
 

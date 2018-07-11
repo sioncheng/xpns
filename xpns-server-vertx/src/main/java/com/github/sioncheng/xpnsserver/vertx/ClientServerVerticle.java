@@ -94,6 +94,8 @@ public class ClientServerVerticle extends AbstractVerticle {
             logger.info(String.format("connected clients %d", this.clientsCounter));
         }
 
+        netSocket.pause();
+
         ClientVerticle clientVerticle = new ClientVerticle(this.id, this.clientEventAddress, netSocket);
         vertx.deployVerticle(clientVerticle, result -> {
             if (result.succeeded()) {
@@ -128,6 +130,7 @@ public class ClientServerVerticle extends AbstractVerticle {
                 this.handleSocketClose(event);
                 break;
             case ClientEvent.STOP:
+                this.handleClientVerticleStop(event);
                 break;
             case ClientEvent.LOGON_FOWARD:
                 this.handleLogonForward(event);
@@ -189,7 +192,9 @@ public class ClientServerVerticle extends AbstractVerticle {
             cce2.setClientVerticle(cce.getClientVerticle());
             this.clientVerticleTable2.put(cce2.getAcid(), cce2);
         } else {
-            logger.warn(String.format("unable to find deployed client verticle", event.getDeploymentId()));
+            logger.warn(String.format("unable to find deployed client verticle %s %s",
+                    event.getDeploymentId(),
+                    event.getAcid()));
         }
 
         //forward logon event to other instance,
@@ -218,18 +223,39 @@ public class ClientServerVerticle extends AbstractVerticle {
     }
 
     private void handleSocketClose(ClientEvent event) {
+        if (logger.isInfoEnabled()) {
+            logger.info(String.format("handle socket close %s %s",
+                    event.getAcid(),
+                    event.getDeploymentId()));
+        }
         this.clientsCounter--;
         if (StringUtils.isNotEmpty(event.getDeploymentId())) {
             this.clientVerticleTable1.remove(event.getDeploymentId());
             vertx.undeploy(event.getDeploymentId());
+            if (logger.isInfoEnabled()) {
+                logger.info(String.format("undeploy client verticle %s %s",
+                        event.getAcid(),
+                        event.getDeploymentId()));
+            }
         }
         if (StringUtils.isNotEmpty(event.getAcid())) {
             this.clientVerticleTable2.remove(event.getAcid());
-
-
             this.redisClient.del(RedisHelper.generateOnlineKey(event.getAcid()), null);
+            if (logger.isInfoEnabled()) {
+                logger.info(String.format("remove client %s %s",
+                        event.getAcid(),
+                        event.getDeploymentId()));
+            }
         }
 
+    }
+
+    private void handleClientVerticleStop(ClientEvent event) {
+        if (logger.isInfoEnabled()) {
+            logger.info(String.format("handle client verticle stop %s %s",
+                    event.getAcid(),
+                    event.getDeploymentId()));
+        }
     }
 
     private void handleLogonForward(ClientEvent event) {
