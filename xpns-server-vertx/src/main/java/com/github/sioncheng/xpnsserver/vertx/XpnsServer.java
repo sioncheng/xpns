@@ -83,7 +83,7 @@ public class XpnsServer extends AbstractVerticle {
         for (int i = 0 ; i < this.serverConfig.getApiInstances(); i++) {
             ApiServerVerticle apiServerVerticle = new ApiServerVerticle(i,
                     this.serverConfig.getApiPort(),
-                    this.serverConfig.getApiHost(),
+                    "0.0.0.0",
                     redisOptions);
             vertx.deployVerticle(apiServerVerticle);
         }

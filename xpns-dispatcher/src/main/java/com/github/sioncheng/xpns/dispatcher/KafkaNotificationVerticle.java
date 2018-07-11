@@ -51,6 +51,8 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
 
         this.httpClient = vertx.createHttpClient();
 
+        this.connection = ConnectionFactory.createConnection();
+
         vertx.eventBus().consumer(this.xpnsServicesEventAddress, this::xpnsServiceEventHandler);
 
         startDiscoverServices();
@@ -221,7 +223,7 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
                 future.fail(exception);
             }
         },
-        true,
+        false,
         result -> {
             //log to es
             NotificationEntity entityEs = entity.clone();
@@ -238,6 +240,7 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
 
     private Exception putToHBase(NotificationEntity entity)  {
         Exception exception = null;
+        Table table = null;
         try {
             Notification notification = entity.getNotification();
 
@@ -257,16 +260,20 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
             put.addColumn(family, "notification".getBytes(), notification.toJSONObject().toJSONString().getBytes("UTF-8"));
 
 
-            Connection connection = ConnectionFactory.createConnection();
 
-            Table table = connection.getTable(TableName.valueOf("notification"));
+
+            table = connection.getTable(TableName.valueOf("notification"));
             table.put(put);
-            table.close();
-            connection.close();
 
         } catch (Exception ex) {
             logger.warn("do real save error", ex);
             exception = ex;
+        } finally {
+            if (table != null) {
+                try {
+                    table.close();
+                } catch (Exception ex) {}
+            }
         }
 
         return exception;
@@ -402,7 +409,6 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
 
     private Exception mayResendNotification(SessionInfo sessionInfo) {
         Exception exception = null;
-        Connection connection = null;
         Table table = null;
         ResultScanner scanner = null;
         try {
@@ -413,8 +419,6 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
                     CompareFilter.CompareOp.EQUAL,
                     String.valueOf(NotificationEntity.OFFLINE).getBytes());
             scan.setFilter(statusFilter);
-
-            connection = ConnectionFactory.createConnection();
 
             table = connection.getTable(TableName.valueOf("notification"));
 
@@ -467,11 +471,6 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
                     table.close();
                 } catch (Exception ex1) {}
             }
-            if (connection != null) {
-                try {
-                    connection.close();
-                } catch (Exception ex2) {}
-            }
 
             exception = ex;
         }
@@ -522,6 +521,8 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
     private KafkaConsumer<String, String> kafkaConsumer;
 
     private HttpClient httpClient;
+
+    private Connection connection;
 
     private String xpnsServicesEventAddress;
     private List<String> services;
