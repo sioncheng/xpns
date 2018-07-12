@@ -7,11 +7,9 @@ import com.github.sioncheng.xpns.common.protocol.Command;
 import com.github.sioncheng.xpns.common.protocol.CommandUtil;
 import com.github.sioncheng.xpns.common.protocol.JsonCommand;
 import com.github.sioncheng.xpns.common.vertx.CommandCodec;
-import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.eventbus.Message;
-import io.vertx.core.eventbus.MessageConsumer;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.core.net.NetSocket;
@@ -20,12 +18,10 @@ import java.io.UnsupportedEncodingException;
 import java.util.List;
 import java.util.UUID;
 
-public class ClientVerticle {
+public class Client {
 
-    public ClientVerticle(Vertx vertx, int serverId, String clientEventAddress, NetSocket netSocket) {
-        this.vertx = vertx;
-        this.serverId = serverId;
-        this.clientEventAddress = clientEventAddress;
+    public Client(ClientServer server, NetSocket netSocket) {
+        this.server = server;
         this.netSocket = netSocket;
         this.commandCodec = new CommandCodec();
         this.status = NEW;
@@ -56,9 +52,7 @@ public class ClientVerticle {
         event.setCommandObject(null);
         event.setEventType(ClientEvent.START);
 
-        vertx.eventBus().send(clientEventAddress, JSON.toJSONString(event));
-
-        netSocket.resume();
+        this.server.clientEventHandler(event);
 
     }
 
@@ -75,7 +69,7 @@ public class ClientVerticle {
         event.setCommandObject(null);
         event.setEventType(ClientEvent.STOP);
 
-        vertx.eventBus().send(clientEventAddress, JSON.toJSONString(event));
+        this.server.clientEventHandler(event);
 
         this.publishNotificationEventAddressOnOff(false);
 
@@ -125,7 +119,7 @@ public class ClientVerticle {
         event.setCommandObject(null);
         event.setEventType(ClientEvent.SOCKET_CLOSE);
 
-        vertx.eventBus().send(clientEventAddress, JSON.toJSONString(event));
+        this.server.clientEventHandler(event);
     }
 
     private void handleCommand(JsonCommand jsonCommand) {
@@ -160,14 +154,9 @@ public class ClientVerticle {
         event.setCommandObject(jsonCommand.getCommandObject());
         event.setEventType(ClientEvent.LOGON);
 
-        vertx.eventBus().send(clientEventAddress, JSON.toJSONString(event));
-
-
-        this.notificationEventAddress = NotificationEvent.EVENT_ADDRESS_PREFIX + "." + this.deploymentID();
+        this.server.clientEventHandler(event);
 
         this.publishNotificationEventAddressOnOff(true);
-
-        vertx.eventBus().consumer(this.notificationEventAddress, this::notificationEventHandler);
 
         this.status = LOGON;
         jsonCommand.setCommandCode(JsonCommand.LOGON_CODE);
@@ -186,14 +175,14 @@ public class ClientVerticle {
         event.setCommandObject(jsonCommand.getCommandObject());
         event.setEventType(ClientEvent.ACK);
 
-        vertx.eventBus().send(clientEventAddress, JSON.toJSONString(event));
+        this.server.clientEventHandler(event);
     }
 
     private void handleHeartbeat(JsonCommand jsonCommand) {
         this.writeCommand(jsonCommand, Command.RESPONSE);
     }
 
-    private void writeCommand(JsonCommand jsonCommand, byte commandType) {
+    public void writeCommand(JsonCommand jsonCommand, byte commandType) {
         try {
             Command command = new Command();
 
@@ -215,40 +204,11 @@ public class ClientVerticle {
     }
 
     private void publishNotificationEventAddressOnOff(boolean on) {
-        NotificationEventAddressBroadcast neab = new NotificationEventAddressBroadcast();
-        neab.setOn(on);
-        neab.setAcid(this.acid);
-        neab.setEventAddress(this.notificationEventAddress);
-
-        vertx.eventBus().publish(NotificationEventAddressBroadcast.EVENT_ADDRESS,
-                JSON.toJSONString(neab));
-
-
+        this.server.publishNotificationEventAddressOnOff(on, this.acid);
     }
 
-    private void notificationEventHandler(Message<String> msg) {
-        Notification notification = JSON.parseObject(msg.body(), Notification.class);
 
-        if (this.status == STOP) {
-
-            return;
-            //
-        }
-
-        JSONObject jsonObject = new JSONObject();
-        jsonObject.put(JsonCommand.ACID, notification.getTo());
-        jsonObject.put(JsonCommand.COMMAND_CODE, JsonCommand.NOTIFICATION_CODE);
-        jsonObject.put(JsonCommand.NOTIFICATION, notification.toJSONObject());
-
-        JsonCommand jsonCommand = JsonCommand.create(Command.REQUEST, jsonObject);
-
-        this.writeCommand(jsonCommand, Command.REQUEST);
-    }
-
-    private Vertx vertx;
-    private int serverId;
-    private String clientEventAddress;
-    private String notificationEventAddress;
+    private ClientServer server;
     private NetSocket netSocket;
     private CommandCodec commandCodec;
     private String acid;
@@ -262,6 +222,6 @@ public class ClientVerticle {
     private static final int LOGON = 2;
     private static final int STOP = 3;
 
-    private static final Logger logger = LoggerFactory.getLogger(ClientVerticle.class);
+    private static final Logger logger = LoggerFactory.getLogger(Client.class);
 
 }

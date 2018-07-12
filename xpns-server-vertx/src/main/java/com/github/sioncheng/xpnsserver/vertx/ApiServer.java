@@ -17,11 +17,10 @@ import io.vertx.redis.RedisOptions;
 import org.apache.commons.lang3.StringUtils;
 
 import java.util.HashMap;
-import java.util.UUID;
 
-public class ApiServerVerticle extends AbstractVerticle {
+public class ApiServer extends AbstractVerticle {
 
-    public ApiServerVerticle(int id, int port, String host, RedisOptions redisOptions) {
+    public ApiServer(int id, int port, String host, RedisOptions redisOptions) {
         this.id = id;
         this.port = port;
         this.host = host;
@@ -150,5 +149,5 @@ public class ApiServerVerticle extends AbstractVerticle {
 
     private HashMap<String, String> clientEventAddressMap;
 
-    private static final Logger logger = LoggerFactory.getLogger(ApiServerVerticle.class);
+    private static final Logger logger = LoggerFactory.getLogger(ApiServer.class);
 }

@@ -1,9 +1,11 @@
 package com.github.sioncheng.xpnsserver.vertx;
 
 import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONObject;
 import com.github.sioncheng.xpns.common.client.Notification;
 import com.github.sioncheng.xpns.common.client.SessionInfo;
 import com.github.sioncheng.xpns.common.date.DateFormatPatterns;
+import com.github.sioncheng.xpns.common.protocol.Command;
 import com.github.sioncheng.xpns.common.protocol.JsonCommand;
 import com.github.sioncheng.xpns.common.storage.NotificationEntity;
 import io.vertx.core.AbstractVerticle;
@@ -24,13 +26,13 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 
-public class ClientServerVerticle extends AbstractVerticle {
+public class ClientServer extends AbstractVerticle {
 
-    public ClientServerVerticle(int id, int port, int maxClients, int instances,
-                                RedisOptions redisOptions, String apiHost, int apiPort,
-                                Map<String, String> kafakProducerConfig,
-                                String notificationAckTopic,
-                                String logonTopic) {
+    public ClientServer(int id, int port, int maxClients, int instances,
+                        RedisOptions redisOptions, String apiHost, int apiPort,
+                        Map<String, String> kafakProducerConfig,
+                        String notificationAckTopic,
+                        String logonTopic) {
         this.id = id;
         this.port = port;
         this.maxClients = maxClients;
@@ -43,8 +45,8 @@ public class ClientServerVerticle extends AbstractVerticle {
         this.logonTopic = logonTopic;
         this.clientsCounter = 0;
         this.logonCounter = 0;
-        this.clientVerticleTable1 = new HashMap<>();
-        this.clientVerticleTable2 = new HashMap<>();
+        this.clientTableByDepId = new HashMap<>();
+        this.clientTableByAcid = new HashMap<>();
         this.clientEventAddress = ClientEvent.EVENT_ADDRESS_PREFIX + "." + this.id;
         this.notificationEventAddress = NotificationEvent.EVENT_ADDRESS_PREFIX + "." + this.id;
     }
@@ -62,7 +64,7 @@ public class ClientServerVerticle extends AbstractVerticle {
             }
         });
 
-        vertx.eventBus().consumer(this.clientEventAddress, this::clientEventHandler);
+        vertx.eventBus().consumer(this.clientEventAddress, this::clientEventMessageHandler);
         vertx.eventBus().consumer(NotificationAskEvent.EVENT_ADDRESS, this::notificationAskEventHandler);
         vertx.eventBus().consumer(this.notificationEventAddress, this::notificationEventHandler);
 
@@ -94,21 +96,25 @@ public class ClientServerVerticle extends AbstractVerticle {
             logger.info(String.format("connected clients %d", this.clientsCounter));
         }
 
-        netSocket.pause();
-
-        ClientVerticle clientVerticle = new ClientVerticle(vertx, this.id, this.clientEventAddress, netSocket);
+        Client client = new Client(this, netSocket);
 
         ClientVerticleEntity cce = new ClientVerticleEntity();
         cce.setAcid("");
-        cce.setDeploymentId(clientVerticle.deploymentID());
-        cce.setClientVerticle(clientVerticle);
-        this.clientVerticleTable1.put(cce.getDeploymentId(), cce);
+        cce.setDeploymentId(client.deploymentID());
+        cce.setClient(client);
+        this.clientTableByDepId.put(cce.getDeploymentId(), cce);
 
-        clientVerticle.start();
+        client.start();
     }
 
-    private void clientEventHandler(Message<String> msg) {
+    private void clientEventMessageHandler(Message<String> msg) {
         ClientEvent event = JSON.parseObject(msg.body(), ClientEvent.class);
+
+        this.clientEventHandler(event);
+    }
+
+
+    public void clientEventHandler(ClientEvent event) {
 
         switch (event.getEventType()) {
             case ClientEvent.START:
@@ -132,7 +138,7 @@ public class ClientServerVerticle extends AbstractVerticle {
                 this.handleNotificationAck(event);
                 break;
             default:
-                logger.warn(String.format("unknown event %s", msg));
+                logger.warn(String.format("unknown event %s", event.getEventType()));
                 break;
 
         }
@@ -163,13 +169,13 @@ public class ClientServerVerticle extends AbstractVerticle {
                     }
                 });
 
-        ClientVerticleEntity cce = this.clientVerticleTable1.get(event.getDeploymentId());
-        ClientVerticleEntity cce2 = this.clientVerticleTable2.get(event.getAcid());
+        ClientVerticleEntity cce = this.clientTableByDepId.get(event.getDeploymentId());
+        ClientVerticleEntity cce2 = this.clientTableByAcid.get(event.getAcid());
 
         //if there is the same client, close it.
         if (cce2 != null) {
             vertx.undeploy(cce2.getDeploymentId());
-            this.clientVerticleTable1.remove(cce2.getDeploymentId());
+            this.clientTableByDepId.remove(cce2.getDeploymentId());
 
             if (logger.isInfoEnabled()) {
                 logger.info(String.format("remove existed client %s", event.getAcid()));
@@ -179,7 +185,7 @@ public class ClientServerVerticle extends AbstractVerticle {
         if (cce != null) {
             cce.setAcid(event.getAcid());
             cce.setDeploymentId(event.getDeploymentId());
-            this.clientVerticleTable2.put(cce.getAcid(), cce);
+            this.clientTableByAcid.put(cce.getAcid(), cce);
         } else {
             logger.warn(String.format("unable to find deployed client verticle %s %s",
                     event.getDeploymentId(),
@@ -220,12 +226,12 @@ public class ClientServerVerticle extends AbstractVerticle {
 
         this.clientsCounter--;
 
-        ClientVerticle clientVerticle = null;
+        Client client = null;
 
         if (StringUtils.isNotEmpty(event.getDeploymentId())) {
-            ClientVerticleEntity entity = this.clientVerticleTable1.remove(event.getDeploymentId());
+            ClientVerticleEntity entity = this.clientTableByDepId.remove(event.getDeploymentId());
             if (entity != null) {
-                clientVerticle = entity.getClientVerticle();
+                client = entity.getClient();
             }
             if (logger.isInfoEnabled()) {
                 logger.info(String.format("undeploy client verticle %s %s",
@@ -234,9 +240,9 @@ public class ClientServerVerticle extends AbstractVerticle {
             }
         }
         if (StringUtils.isNotEmpty(event.getAcid())) {
-            ClientVerticleEntity entity = this.clientVerticleTable2.remove(event.getAcid());
+            ClientVerticleEntity entity = this.clientTableByAcid.remove(event.getAcid());
             if (entity != null) {
-                clientVerticle = entity.getClientVerticle();
+                client = entity.getClient();
             }
             this.redisClient.del(RedisHelper.generateOnlineKey(event.getAcid()), null);
             if (logger.isInfoEnabled()) {
@@ -246,8 +252,8 @@ public class ClientServerVerticle extends AbstractVerticle {
             }
         }
 
-        if (clientVerticle != null) {
-            clientVerticle.stop();
+        if (client != null) {
+            client.stop();
         }
     }
 
@@ -263,11 +269,11 @@ public class ClientServerVerticle extends AbstractVerticle {
         if (logger.isInfoEnabled()) {
             logger.info(String.format("handle logon forward %s", event.getAcid()));
         }
-        ClientVerticleEntity cce2 = this.clientVerticleTable2.get(event.getAcid());
+        ClientVerticleEntity cce2 = this.clientTableByAcid.get(event.getAcid());
 
         if (cce2 != null) {
             vertx.undeploy(cce2.getDeploymentId());
-            this.clientVerticleTable1.remove(cce2.getDeploymentId());
+            this.clientTableByDepId.remove(cce2.getDeploymentId());
 
             if (logger.isInfoEnabled()) {
                 logger.info(String.format("remove existed client %s", event.getAcid()));
@@ -299,7 +305,7 @@ public class ClientServerVerticle extends AbstractVerticle {
 
     private void notificationAskEventHandler(Message<String> msg) {
         String to = msg.body();
-        if (this.clientVerticleTable2.containsKey(to)) {
+        if (this.clientTableByAcid.containsKey(to)) {
             if (logger.isInfoEnabled()) {
                 logger.info(String.format("got notification target %s", to));
             }
@@ -308,6 +314,34 @@ public class ClientServerVerticle extends AbstractVerticle {
     }
 
     private void notificationEventHandler(Message<String> msg) {
+        Notification notification = JSON.parseObject(msg.body(), Notification.class);
+
+        ClientVerticleEntity entity = this.clientTableByAcid.get(notification.getTo());
+        if (entity == null) {
+            logger.warn(String.format("%s is offline", notification.getTo()));
+            return;
+        }
+
+        JSONObject jsonObject = new JSONObject();
+        jsonObject.put(JsonCommand.ACID, notification.getTo());
+        jsonObject.put(JsonCommand.COMMAND_CODE, JsonCommand.NOTIFICATION_CODE);
+        jsonObject.put(JsonCommand.NOTIFICATION, notification.toJSONObject());
+
+        JsonCommand jsonCommand = JsonCommand.create(Command.REQUEST, jsonObject);
+
+        entity.getClient().writeCommand(jsonCommand, Command.REQUEST);
+
+    }
+
+    public void publishNotificationEventAddressOnOff(boolean on, String acid) {
+        NotificationEventAddressBroadcast neab = new NotificationEventAddressBroadcast();
+        neab.setOn(on);
+        neab.setAcid(acid);
+        neab.setEventAddress(this.notificationEventAddress);
+
+        vertx.eventBus().publish(NotificationEventAddressBroadcast.EVENT_ADDRESS,
+                JSON.toJSONString(neab));
+
 
     }
 
@@ -326,14 +360,14 @@ public class ClientServerVerticle extends AbstractVerticle {
 
     private int clientsCounter;
     private int logonCounter;
-    private HashMap<String, ClientVerticleEntity> clientVerticleTable1;
-    private HashMap<String, ClientVerticleEntity> clientVerticleTable2;
+    private HashMap<String, ClientVerticleEntity> clientTableByDepId;
+    private HashMap<String, ClientVerticleEntity> clientTableByAcid;
     private String clientEventAddress;
     private String notificationEventAddress;
 
     private KafkaProducer<String, String> kafkaProducer;
 
-    private Logger logger = LoggerFactory.getLogger(ClientServerVerticle.class);
+    private Logger logger = LoggerFactory.getLogger(ClientServer.class);
 
     private class ClientVerticleEntity {
 
@@ -353,16 +387,16 @@ public class ClientServerVerticle extends AbstractVerticle {
             this.deploymentId = deploymentId;
         }
 
-        public ClientVerticle getClientVerticle() {
-            return clientVerticle;
+        public Client getClient() {
+            return client;
         }
 
-        public void setClientVerticle(ClientVerticle clientVerticle) {
-            this.clientVerticle = clientVerticle;
+        public void setClient(Client client) {
+            this.client = client;
         }
 
         private String acid;
         private String deploymentId;
-        private ClientVerticle clientVerticle;
+        private Client client;
     }
 }

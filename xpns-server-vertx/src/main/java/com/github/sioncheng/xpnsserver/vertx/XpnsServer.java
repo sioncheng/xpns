@@ -1,6 +1,5 @@
 package com.github.sioncheng.xpnsserver.vertx;
 
-import com.alibaba.fastjson.JSON;
 import com.github.sioncheng.xpns.common.config.AppProperties;
 import com.github.sioncheng.xpns.common.zk.Directories;
 import io.vertx.core.AbstractVerticle;
@@ -13,7 +12,6 @@ import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.ZooDefs;
 import org.apache.zookeeper.ZooKeeper;
 
-import java.util.List;
 import java.util.Map;
 
 public class XpnsServer extends AbstractVerticle {
@@ -48,7 +46,7 @@ public class XpnsServer extends AbstractVerticle {
 
         int i = 0;
         for (; i < this.serverConfig.getClientInstances() - 1; i++){
-            ClientServerVerticle verticle = new ClientServerVerticle(i,
+            ClientServer verticle = new ClientServer(i,
                     this.serverConfig.getClientPort(),
                     maxClients,
                     this.serverConfig.getClientInstances(),
@@ -61,7 +59,7 @@ public class XpnsServer extends AbstractVerticle {
             vertx.deployVerticle(verticle);
         }
 
-        ClientServerVerticle verticle = new ClientServerVerticle(this.serverConfig.getClientInstances() - 1,
+        ClientServer verticle = new ClientServer(this.serverConfig.getClientInstances() - 1,
                 this.serverConfig.getClientPort(),
                 this.serverConfig.getMaxClients() - i * maxClients,
                 this.serverConfig.getClientInstances(),
@@ -81,7 +79,7 @@ public class XpnsServer extends AbstractVerticle {
         redisOptions.setPort(this.serverConfig.getRedisPort());
 
         for (int i = 0 ; i < this.serverConfig.getApiInstances(); i++) {
-            ApiServerVerticle apiServerVerticle = new ApiServerVerticle(i,
+            ApiServer apiServerVerticle = new ApiServer(i,
                     this.serverConfig.getApiPort(),
                     "0.0.0.0",
                     redisOptions);
