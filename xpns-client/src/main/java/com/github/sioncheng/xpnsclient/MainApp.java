@@ -2,6 +2,7 @@ package com.github.sioncheng.xpnsclient;
 
 import io.vertx.core.Vertx;
 import io.vertx.core.VertxOptions;
+import org.apache.commons.lang3.StringUtils;
 
 public class MainApp {
 
@@ -10,7 +11,15 @@ public class MainApp {
         System.setProperty("vertx.logger-delegate-factory-class-name",
                 "io.vertx.core.logging.SLF4JLogDelegateFactory");
 
-        CommandArguments commandArguments = CommandArguments.readFromSystemIn();
+        CommandArguments commandArguments = null;
+
+        String config = System.getProperty("config");
+
+        if (StringUtils.isEmpty(config)) {
+            commandArguments = CommandArguments.readFromSystemIn();
+        } else {
+            commandArguments = CommandArguments.readFromConfig(config);
+        }
 
         VertxOptions vertxOptions = new VertxOptions();
         vertxOptions.setEventLoopPoolSize(commandArguments.getThreads());

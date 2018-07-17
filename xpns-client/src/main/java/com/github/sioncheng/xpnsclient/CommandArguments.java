@@ -11,6 +11,12 @@ public class CommandArguments {
         return commandLineArgs;
     }
 
+    public static CommandArguments readFromConfig(String config) throws Exception {
+        CommandArguments commandLineArgs = new CommandArguments();
+        CommandLineArgsReader.fillFromPropertiesConfig(commandLineArgs, config);
+        return commandLineArgs;
+    }
+
 
     public String getTargetHost() {
         return targetHost;
