@@ -1,5 +1,6 @@
 package com.github.sioncheng.xpnsclient;
 
+import com.github.sioncheng.xpns.common.console.CommandLineArgsReader;
 import io.vertx.core.Vertx;
 import io.vertx.core.VertxOptions;
 import org.apache.commons.lang3.StringUtils;
@@ -20,6 +21,8 @@ public class MainApp {
         } else {
             commandArguments = CommandArguments.readFromConfig(config);
         }
+        CommandLineArgsReader.refillFromSystemD(commandArguments);
+
 
         VertxOptions vertxOptions = new VertxOptions();
         vertxOptions.setEventLoopPoolSize(commandArguments.getThreads());

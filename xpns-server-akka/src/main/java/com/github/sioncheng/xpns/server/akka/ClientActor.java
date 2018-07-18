@@ -25,18 +25,20 @@ public class ClientActor extends AbstractActor {
                     handleReceived(received);
                 })
                 .match(Tcp.ConnectionClosed.class, connectionClosed -> {
+                    server.tell(ClientActivation.createLogout(getSelf(), acid), getSelf());
                     getContext().stop(self());
                 })
                 .build();
     }
 
     private void handleReceived(Tcp.Received received) {
+        System.out.println(Thread.currentThread().getName());
         List<JsonCommand> commands = commandCodec.decode(received.data().asByteBuffer());
         commands.forEach(c -> {
             switch (c.getCommandCode()) {
                 case JsonCommand.LOGIN_CODE:
-                    ClientLogon clientLogon = ClientLogon.create(getSelf(), c.getAcid());
-                    server.tell(clientLogon, getSelf());
+                    this.acid = c.getAcid();
+                    server.tell(ClientActivation.createLogon(getSelf(), c.getAcid()), getSelf());
                     break;
             }
         });
@@ -44,6 +46,8 @@ public class ClientActor extends AbstractActor {
     }
 
     private ActorRef server;
+
+    private String acid;
 
     private CommandCodec commandCodec = new CommandCodec();
 }

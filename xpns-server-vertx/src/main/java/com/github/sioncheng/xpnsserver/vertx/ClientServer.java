@@ -22,9 +22,7 @@ import io.vertx.redis.RedisOptions;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.time.DateFormatUtils;
 
-import java.util.Date;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 
 public class ClientServer extends AbstractVerticle {
 
@@ -70,6 +68,8 @@ public class ClientServer extends AbstractVerticle {
 
         kafkaProducer = KafkaProducer.create(vertx, this.kafkaProducerConfig);
 
+        vertx.setPeriodic(10 * 60 * 1000, this::scanClients);
+
         super.start();
     }
 
@@ -102,6 +102,7 @@ public class ClientServer extends AbstractVerticle {
         cce.setAcid("");
         cce.setDeploymentId(client.deploymentID());
         cce.setClient(client);
+        cce.setActiveDateTime(System.currentTimeMillis());
         this.clientTableByDepId.put(cce.getDeploymentId(), cce);
 
         client.start();
@@ -137,6 +138,9 @@ public class ClientServer extends AbstractVerticle {
             case ClientEvent.ACK:
                 this.handleNotificationAck(event);
                 break;
+            case ClientEvent.HEART_BEAT:
+                this.handelClientHeartbeat(event);
+                break;
             default:
                 logger.warn(String.format("unknown event %s", event.getEventType()));
                 break;
@@ -150,24 +154,7 @@ public class ClientServer extends AbstractVerticle {
             logger.info(String.format("client logon %s %d", event.getAcid(), this.logonCounter));
         }
 
-        //set to redis
-        SessionInfo sessionInfo = new SessionInfo();
-        sessionInfo.setAcid(event.getAcid());
-        sessionInfo.setServer(this.apiHost);
-        sessionInfo.setPort(this.apiPort);
-
-        String sessionInfoJson = JSON.toJSONString(sessionInfo);
-
-        final String onlineKey = RedisHelper.generateOnlineKey(sessionInfo.getAcid());
-        this.redisClient.set(onlineKey,
-                sessionInfoJson,
-                result ->{
-                    if (result.succeeded()) {
-                        this.redisClient.expire(onlineKey, 3600, null);
-                    } else {
-                        logger.warn(String.format("set online info to redis failure %s", onlineKey));
-                    }
-                });
+        this.setSessionInfo(event.getAcid());
 
         ClientVerticleEntity cce = this.clientTableByDepId.get(event.getDeploymentId());
         ClientVerticleEntity cce2 = this.clientTableByAcid.get(event.getAcid());
@@ -185,6 +172,7 @@ public class ClientServer extends AbstractVerticle {
         if (cce != null) {
             cce.setAcid(event.getAcid());
             cce.setDeploymentId(event.getDeploymentId());
+            cce.setActiveDateTime(System.currentTimeMillis());
             this.clientTableByAcid.put(cce.getAcid(), cce);
         } else {
             logger.warn(String.format("unable to find deployed client verticle %s %s",
@@ -210,10 +198,15 @@ public class ClientServer extends AbstractVerticle {
             }
         }
         //
+        SessionInfo sessionInfo = new SessionInfo();
+        sessionInfo.setAcid(event.getAcid());
+        sessionInfo.setServer(this.apiHost);
+        sessionInfo.setPort(this.apiPort);
+
         KafkaProducerRecord<String, String> logonEvent =
                 new KafkaProducerRecordImpl<>(this.logonTopic,
                         event.getAcid(),
-                        sessionInfoJson);
+                        JSON.toJSONString(sessionInfo));
         this.kafkaProducer.write(logonEvent);
     }
 
@@ -250,6 +243,8 @@ public class ClientServer extends AbstractVerticle {
                         event.getAcid(),
                         event.getDeploymentId()));
             }
+
+            this.removeSessionInfo(entity.getAcid());
         }
 
         if (client != null) {
@@ -303,6 +298,14 @@ public class ClientServer extends AbstractVerticle {
         this.kafkaProducer.write(kafkaProducerRecord);
     }
 
+    private void handelClientHeartbeat(ClientEvent event) {
+        ClientVerticleEntity entity = this.clientTableByAcid.get(event.getAcid());
+        if (entity != null) {
+            entity.setActiveDateTime(System.currentTimeMillis());
+            this.setSessionInfo(entity.getAcid());
+        }
+    }
+
     private void notificationAskEventHandler(Message<String> msg) {
         String to = msg.body();
         if (this.clientTableByAcid.containsKey(to)) {
@@ -343,6 +346,63 @@ public class ClientServer extends AbstractVerticle {
                 JSON.toJSONString(neab));
 
 
+    }
+
+
+    private void setSessionInfo(String acid) {
+        //set to redis
+        SessionInfo sessionInfo = new SessionInfo();
+        sessionInfo.setAcid(acid);
+        sessionInfo.setServer(this.apiHost);
+        sessionInfo.setPort(this.apiPort);
+
+        String sessionInfoJson = JSON.toJSONString(sessionInfo);
+
+        final String onlineKey = RedisHelper.generateOnlineKey(sessionInfo.getAcid());
+        this.redisClient.set(onlineKey,
+                sessionInfoJson,
+                result ->{
+                    if (result.succeeded()) {
+                        this.redisClient.expire(onlineKey, 3600, null);
+                    } else {
+                        logger.warn(String.format("set online info to redis failure %s", onlineKey));
+                    }
+                });
+    }
+
+    private void removeSessionInfo(String acid) {
+
+        final String onlineKey = RedisHelper.generateOnlineKey(acid);
+        this.redisClient.del(onlineKey,
+                result ->{
+                    if (result.succeeded()) {
+                        this.redisClient.expire(onlineKey, 3600, null);
+                    } else {
+                        logger.warn(String.format("del online info to redis failure %s", onlineKey));
+                    }
+                });
+    }
+
+    private void scanClients(long l) {
+        if (this.clientTableByAcid == null) {
+            return;
+        }
+
+        List<Map.Entry<String, ClientVerticleEntity>> zombies =
+                new ArrayList<>();
+
+        for (Map.Entry<String, ClientVerticleEntity> kv :
+                this.clientTableByAcid.entrySet()) {
+            long ts = System.currentTimeMillis() - kv.getValue().getActiveDateTime();
+            if (ts > l) {
+                zombies.add(kv);
+            }
+        }
+
+        zombies.forEach(kv -> {
+            //this.removeSessionInfo(kv.getKey());
+            kv.getValue().getClient().stop();
+        });
     }
 
     private int id;
@@ -395,8 +455,17 @@ public class ClientServer extends AbstractVerticle {
             this.client = client;
         }
 
+        public long getActiveDateTime() {
+            return activeDateTime;
+        }
+
+        public void setActiveDateTime(long activeDateTime) {
+            this.activeDateTime = activeDateTime;
+        }
+
         private String acid;
         private String deploymentId;
         private Client client;
+        private long activeDateTime;
     }
 }

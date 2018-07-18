@@ -29,11 +29,12 @@ public class ServerActor extends AbstractActor {
                     System.out.println("bound");
                 })
                 .match(Tcp.Connected.class, msg -> {
+                    System.out.println(Thread.currentThread().getName());
                     final ActorRef clientActor = getContext().getSystem().actorOf(ClientActor.props(getSelf()));
                     getSender().tell(TcpMessage.register(clientActor), getSelf());
                 })
-                .match(ClientLogon.class, cl->{
-                    System.out.println(String.format("client logon %s", cl.acid()));
+                .match(ClientActivation.class, cl->{
+                    System.out.println(String.format("client logon %s %d", cl.acid(), cl.status()));
                 })
                 .build();
     }
