@@ -47,7 +47,19 @@ public class JsonCommand {
         return this.commandObject.getInteger(COMMAND_CODE);
     }
 
-    public void setCommandCode(int commandCode) {this.commandObject.put(COMMAND_CODE, commandCode);}
+    public JsonCommand clone() {
+        JsonCommand jsonCommand = JsonCommand.create(this.getSerialNumber(),
+                this.getCommandType(),
+                this.getCommandObject());
+        return jsonCommand;
+
+    }
+
+    public JsonCommand cloneWithCommandCode(int commandCode) {
+        JsonCommand jsonCommand = this.clone();
+        jsonCommand.commandObject.put(COMMAND_CODE, commandCode);
+        return jsonCommand;
+    }
 
     public String getAcid() {
         return this.commandObject.getString(ACID);

@@ -1,5 +1,9 @@
 package com.github.sioncheng.xpns.common.protocol;
 
+import io.vertx.core.json.Json;
+
+import java.io.UnsupportedEncodingException;
+
 public class Command {
 
     public static final byte MAGIC_BYTE_HIGH = (byte)0xab;
@@ -26,6 +30,18 @@ public class Command {
         this.serializationType = serializationType;
         this.payloadLength = payloadLength;
         this.payloadBytes = payloadBytes;
+    }
+
+    public static Command createJsonCommand(JsonCommand jsonCommand, byte commandType) throws UnsupportedEncodingException {
+        Command command = new Command();
+        command.setSerialNumber(jsonCommand.getSerialNumber());
+        command.setCommandType(commandType);
+        command.setSerializationType(Command.JSON_SERIALIZATION);
+        byte[] payload = jsonCommand.getCommandObject().toJSONString().getBytes("UTF-8");
+        command.setPayloadLength(payload.length);
+        command.setPayloadBytes(payload);
+
+        return command;
     }
 
     public long getSerialNumber() {

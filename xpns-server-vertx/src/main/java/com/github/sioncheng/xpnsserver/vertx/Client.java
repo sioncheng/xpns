@@ -7,6 +7,7 @@ import com.github.sioncheng.xpns.common.protocol.Command;
 import com.github.sioncheng.xpns.common.protocol.CommandUtil;
 import com.github.sioncheng.xpns.common.protocol.JsonCommand;
 import com.github.sioncheng.xpns.common.vertx.CommandCodec;
+import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.eventbus.Message;
@@ -18,31 +19,27 @@ import java.io.UnsupportedEncodingException;
 import java.util.List;
 import java.util.UUID;
 
-public class Client {
+public class Client extends AbstractVerticle {
 
     public Client(ClientServer server, NetSocket netSocket) {
         this.server = server;
         this.netSocket = netSocket;
         this.commandCodec = new CommandCodec();
         this.status = NEW;
-        this.deploymentId = UUID.randomUUID().toString();
 
         this.netSocket.handler(this::socketHandler);
         this.netSocket.exceptionHandler(this::socketExceptionHandler);
         this.netSocket.closeHandler(this::socketCloseHandler);
-
     }
 
-    public String deploymentID() {
-        return this.deploymentId;
-    }
-
-
+    @Override
     public void start() {
 
         if (logger.isInfoEnabled()) {
             logger.info(String.format("client verticle start %s", this.deploymentID()));
         }
+
+        this.netSocket.resume();
 
         this.status = START;
 
@@ -54,8 +51,10 @@ public class Client {
 
         this.server.clientEventHandler(event);
 
+        vertx.eventBus().consumer(this.deploymentID(), this::commandHandler);
     }
 
+    @Override
     public void stop()  {
 
         if (this.netSocket != null) {
@@ -141,27 +140,24 @@ public class Client {
         }
     }
 
-    private void handleLogin(JsonCommand jsonCommand) {
-        this.acid = jsonCommand.getAcid();
+    private void handleLogin(JsonCommand jsc) {
+        this.acid = jsc.getAcid();
+
+        this.status = LOGON;
+
+        JsonCommand jsonCommand = jsc.cloneWithCommandCode(JsonCommand.LOGON_CODE);
+
+        this.writeCommand(jsonCommand, Command.RESPONSE);
 
         ClientEvent event = new ClientEvent();
         event.setAcid(this.acid);
-        if (this.status == START) {
-            event.setDeploymentId(this.deploymentID());
-        } else {
-            event.setDeploymentId("");
-        }
+        event.setDeploymentId(this.deploymentID());
         event.setCommandObject(jsonCommand.getCommandObject());
         event.setEventType(ClientEvent.LOGON);
 
         this.server.clientEventHandler(event);
 
         this.publishNotificationEventAddressOnOff(true);
-
-        this.status = LOGON;
-        jsonCommand.setCommandCode(JsonCommand.LOGON_CODE);
-
-        this.writeCommand(jsonCommand, Command.RESPONSE);
     }
 
     private void handleAck(JsonCommand jsonCommand) {
@@ -180,19 +176,19 @@ public class Client {
 
     private void handleHeartbeat(JsonCommand jsonCommand) {
         this.writeCommand(jsonCommand, Command.RESPONSE);
+
+        ClientEvent event = new ClientEvent();
+        event.setAcid(this.acid);
+        event.setDeploymentId(this.deploymentID());
+        event.setCommandObject(jsonCommand.getCommandObject());
+        event.setEventType(ClientEvent.HEART_BEAT);
+
+        this.server.clientEventHandler(event);
     }
 
-    public void writeCommand(JsonCommand jsonCommand, byte commandType) {
+    private void writeCommand(JsonCommand jsonCommand, byte commandType) {
         try {
-            Command command = new Command();
-
-            command.setSerialNumber(jsonCommand.getSerialNumber());
-            command.setCommandType(commandType);
-            command.setSerializationType(Command.JSON_SERIALIZATION);
-
-            byte[] payload = jsonCommand.getCommandObject().toJSONString().getBytes("UTF-8");
-            command.setPayloadLength(payload.length);
-            command.setPayloadBytes(payload);
+            Command command = Command.createJsonCommand(jsonCommand, commandType);
 
             byte[] data = CommandUtil.serializeCommand(command);
 
@@ -207,14 +203,16 @@ public class Client {
         this.server.publishNotificationEventAddressOnOff(on, this.acid);
     }
 
+    private void commandHandler(Message<String> message) {
+        JSONObject jsonObject = JSON.parseObject(message.body());
+        JsonCommand jsonCommand = JsonCommand.create(Command.REQUEST, jsonObject);
+        this.writeCommand(jsonCommand, jsonCommand.getCommandType());
+    }
 
     private ClientServer server;
     private NetSocket netSocket;
     private CommandCodec commandCodec;
     private String acid;
-
-    private String deploymentId;
-
     private int status;
 
     private static final int NEW = 0;

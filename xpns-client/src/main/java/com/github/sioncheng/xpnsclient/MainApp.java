@@ -44,14 +44,15 @@ public class MainApp {
             startId = startId + batch;
         }
 
-        vertx.deployVerticle(new XpnsClientsVerticle(commandArguments.getAppId(),
-                startId,
-                commandArguments.getClientsNumber(),
-                commandArguments.getPrefixChar(),
-                commandArguments.getClientsNumber() - startId + 1,
-                commandArguments.getTargetHost(),
-                commandArguments.getTargetPort()));
-
+        if (startId <= commandArguments.getClientsNumber()) {
+            vertx.deployVerticle(new XpnsClientsVerticle(commandArguments.getAppId(),
+                    startId,
+                    commandArguments.getClientsNumber(),
+                    commandArguments.getPrefixChar(),
+                    commandArguments.getClientsNumber() - startId + 1,
+                    commandArguments.getTargetHost(),
+                    commandArguments.getTargetPort()));
+        }
 
         System.in.read();
     }

@@ -11,14 +11,22 @@ public class MainApp {
 
         AppProperties.init();
 
-        ActorSystem actorSystem = ActorSystem.create("xpns-server-akka");
+        ActorSystem actorSystem = ActorSystem.create("xpns-server-akka-tcp");
 
         ActorRef server = actorSystem.actorOf(ServerActor.props());
 
         server.tell(new ServerActor.Start(), null);
 
+        ActorSystem actorSystem2 = ActorSystem.create("xpns-server-akka-api");
+
+        ActorRef apiServer = actorSystem2.actorOf(ApiActor.props(AppProperties.getString("server.api.host"),
+                AppProperties.getInt("server.api.port"),
+                server));
+
+
         System.in.read();
 
         actorSystem.terminate();
+        actorSystem2.terminate();
     }
 }

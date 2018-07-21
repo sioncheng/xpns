@@ -12,7 +12,7 @@ public class ClientEvent {
     public static final int HEART_BEAT = 4;
     public static final int STOP = 5;
     public static final int SOCKET_CLOSE = 6;
-    public static final int LOGON_FOWARD = 7;
+    public static final int LOGON_FORWARD = 7;
 
     public ClientEvent() {}
 

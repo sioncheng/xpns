@@ -5,7 +5,6 @@ import com.alibaba.fastjson.JSONObject;
 import com.github.sioncheng.xpns.common.client.Notification;
 import com.github.sioncheng.xpns.common.client.SessionInfo;
 import com.github.sioncheng.xpns.common.date.DateFormatPatterns;
-import com.github.sioncheng.xpns.common.protocol.Command;
 import com.github.sioncheng.xpns.common.protocol.JsonCommand;
 import com.github.sioncheng.xpns.common.storage.NotificationEntity;
 import io.vertx.core.AbstractVerticle;
@@ -68,7 +67,7 @@ public class ClientServer extends AbstractVerticle {
 
         kafkaProducer = KafkaProducer.create(vertx, this.kafkaProducerConfig);
 
-        vertx.setPeriodic(10 * 60 * 1000, this::scanClients);
+        vertx.setPeriodic(MILLIS_OF_10_MINUTES, this::scanClients);
 
         super.start();
     }
@@ -96,32 +95,22 @@ public class ClientServer extends AbstractVerticle {
             logger.info(String.format("connected clients %d", this.clientsCounter));
         }
 
+        netSocket.pause();
+
         Client client = new Client(this, netSocket);
 
-        ClientVerticleEntity cce = new ClientVerticleEntity();
-        cce.setAcid("");
-        cce.setDeploymentId(client.deploymentID());
-        cce.setClient(client);
-        cce.setActiveDateTime(System.currentTimeMillis());
-        this.clientTableByDepId.put(cce.getDeploymentId(), cce);
-
-        client.start();
+        vertx.deployVerticle(client);
     }
 
     private void clientEventMessageHandler(Message<String> msg) {
         ClientEvent event = JSON.parseObject(msg.body(), ClientEvent.class);
 
-        this.clientEventHandler(event);
-    }
-
-
-    public void clientEventHandler(ClientEvent event) {
-
+        if (logger.isInfoEnabled()) {
+            logger.info(String.format("client event handler %s %s", event.getAcid(), event.getEventType()));
+        }
         switch (event.getEventType()) {
             case ClientEvent.START:
-                if (logger.isInfoEnabled()) {
-
-                }
+                this.handleStart(event);
                 break;
             case ClientEvent.LOGON:
                 this.handleLogon(event);
@@ -130,22 +119,36 @@ public class ClientServer extends AbstractVerticle {
                 this.handleSocketClose(event);
                 break;
             case ClientEvent.STOP:
-                this.handleClientVerticleStop(event);
+                this.handleClientStop(event);
                 break;
-            case ClientEvent.LOGON_FOWARD:
+            case ClientEvent.LOGON_FORWARD:
                 this.handleLogonForward(event);
                 break;
             case ClientEvent.ACK:
                 this.handleNotificationAck(event);
                 break;
             case ClientEvent.HEART_BEAT:
-                this.handelClientHeartbeat(event);
+                this.handleClientHeartbeat(event);
                 break;
             default:
                 logger.warn(String.format("unknown event %s", event.getEventType()));
                 break;
 
         }
+    }
+
+
+    public void clientEventHandler(ClientEvent event) {
+        vertx.eventBus().send(this.clientEventAddress, JSON.toJSONString(event));
+    }
+
+    private void handleStart(ClientEvent event) {
+
+        ClientVerticleEntity cce = new ClientVerticleEntity();
+        cce.setAcid("");
+        cce.setDeploymentId(event.getDeploymentId());
+        cce.setActiveDateTime(System.currentTimeMillis());
+        this.clientTableByDepId.put(cce.getDeploymentId(), cce);
     }
 
     private void handleLogon(ClientEvent event) {
@@ -173,18 +176,28 @@ public class ClientServer extends AbstractVerticle {
             cce.setAcid(event.getAcid());
             cce.setDeploymentId(event.getDeploymentId());
             cce.setActiveDateTime(System.currentTimeMillis());
+
             this.clientTableByAcid.put(cce.getAcid(), cce);
         } else {
             logger.warn(String.format("unable to find deployed client verticle %s %s",
                     event.getDeploymentId(),
                     event.getAcid()));
+
+            cce = new ClientVerticleEntity();
+            cce.setAcid(event.getAcid());
+            cce.setDeploymentId(event.getDeploymentId());
+            cce.setActiveDateTime(System.currentTimeMillis());
+
+            this.clientTableByDepId.put(cce.getDeploymentId(), cce);
+
+            this.clientTableByAcid.put(cce.getAcid(), cce);
         }
 
         //forward logon event to other instance,
         //
         if (this.instances > 0) {
             ClientEvent logonForward = event.clone();
-            logonForward.setEventType(ClientEvent.LOGON_FOWARD);
+            logonForward.setEventType(ClientEvent.LOGON_FORWARD);
             for (int i = 0 ; i < this.instances; i++) {
                 if (i == this.id) {
                     if (logger.isInfoEnabled()) {
@@ -219,24 +232,18 @@ public class ClientServer extends AbstractVerticle {
 
         this.clientsCounter--;
 
-        Client client = null;
 
         if (StringUtils.isNotEmpty(event.getDeploymentId())) {
-            ClientVerticleEntity entity = this.clientTableByDepId.remove(event.getDeploymentId());
-            if (entity != null) {
-                client = entity.getClient();
-            }
+            this.clientTableByDepId.remove(event.getDeploymentId());
             if (logger.isInfoEnabled()) {
                 logger.info(String.format("undeploy client verticle %s %s",
                         event.getAcid(),
                         event.getDeploymentId()));
             }
+            vertx.undeploy(event.getDeploymentId());
         }
         if (StringUtils.isNotEmpty(event.getAcid())) {
-            ClientVerticleEntity entity = this.clientTableByAcid.remove(event.getAcid());
-            if (entity != null) {
-                client = entity.getClient();
-            }
+            this.clientTableByAcid.remove(event.getAcid());
             this.redisClient.del(RedisHelper.generateOnlineKey(event.getAcid()), null);
             if (logger.isInfoEnabled()) {
                 logger.info(String.format("remove client %s %s",
@@ -244,15 +251,11 @@ public class ClientServer extends AbstractVerticle {
                         event.getDeploymentId()));
             }
 
-            this.removeSessionInfo(entity.getAcid());
-        }
-
-        if (client != null) {
-            client.stop();
+            this.removeSessionInfo(event.getAcid());
         }
     }
 
-    private void handleClientVerticleStop(ClientEvent event) {
+    private void handleClientStop(ClientEvent event) {
         if (logger.isInfoEnabled()) {
             logger.info(String.format("handle client verticle stop %s %s",
                     event.getAcid(),
@@ -298,11 +301,16 @@ public class ClientServer extends AbstractVerticle {
         this.kafkaProducer.write(kafkaProducerRecord);
     }
 
-    private void handelClientHeartbeat(ClientEvent event) {
+    private void handleClientHeartbeat(ClientEvent event) {
+        logger.info(String.format("handle client heart beat %d %s", Thread.currentThread().getId(),
+                Thread.currentThread().getName()));
+
         ClientVerticleEntity entity = this.clientTableByAcid.get(event.getAcid());
         if (entity != null) {
             entity.setActiveDateTime(System.currentTimeMillis());
             this.setSessionInfo(entity.getAcid());
+        } else {
+            logger.warn(String.format("cant find client for %s during heartbeat", entity.getAcid()));
         }
     }
 
@@ -325,15 +333,16 @@ public class ClientServer extends AbstractVerticle {
             return;
         }
 
+        if (logger.isInfoEnabled()) {
+            logger.info(String.format("sent notification command to %s", entity.getDeploymentId()));
+        }
+
         JSONObject jsonObject = new JSONObject();
         jsonObject.put(JsonCommand.ACID, notification.getTo());
         jsonObject.put(JsonCommand.COMMAND_CODE, JsonCommand.NOTIFICATION_CODE);
         jsonObject.put(JsonCommand.NOTIFICATION, notification.toJSONObject());
 
-        JsonCommand jsonCommand = JsonCommand.create(Command.REQUEST, jsonObject);
-
-        entity.getClient().writeCommand(jsonCommand, Command.REQUEST);
-
+        vertx.eventBus().send(entity.getDeploymentId(), jsonObject.toJSONString());
     }
 
     public void publishNotificationEventAddressOnOff(boolean on, String acid) {
@@ -384,6 +393,9 @@ public class ClientServer extends AbstractVerticle {
     }
 
     private void scanClients(long l) {
+        logger.info(String.format("scan clients %d %s", Thread.currentThread().getId(),
+                Thread.currentThread().getName()));
+
         if (this.clientTableByAcid == null) {
             return;
         }
@@ -391,17 +403,19 @@ public class ClientServer extends AbstractVerticle {
         List<Map.Entry<String, ClientVerticleEntity>> zombies =
                 new ArrayList<>();
 
+        long now = System.currentTimeMillis();
         for (Map.Entry<String, ClientVerticleEntity> kv :
                 this.clientTableByAcid.entrySet()) {
-            long ts = System.currentTimeMillis() - kv.getValue().getActiveDateTime();
-            if (ts > l) {
+            long ts = now - kv.getValue().getActiveDateTime();
+            if (ts > MILLIS_OF_10_MINUTES) {
                 zombies.add(kv);
             }
         }
 
         zombies.forEach(kv -> {
             //this.removeSessionInfo(kv.getKey());
-            kv.getValue().getClient().stop();
+            //kv.getValue().getClient().stop();
+            vertx.undeploy(kv.getValue().getDeploymentId());
         });
     }
 
@@ -427,6 +441,8 @@ public class ClientServer extends AbstractVerticle {
 
     private KafkaProducer<String, String> kafkaProducer;
 
+    private static final long MILLIS_OF_10_MINUTES = 10 * 60 * 1000L;
+
     private Logger logger = LoggerFactory.getLogger(ClientServer.class);
 
     private class ClientVerticleEntity {
@@ -447,14 +463,6 @@ public class ClientServer extends AbstractVerticle {
             this.deploymentId = deploymentId;
         }
 
-        public Client getClient() {
-            return client;
-        }
-
-        public void setClient(Client client) {
-            this.client = client;
-        }
-
         public long getActiveDateTime() {
             return activeDateTime;
         }
@@ -465,7 +473,6 @@ public class ClientServer extends AbstractVerticle {
 
         private String acid;
         private String deploymentId;
-        private Client client;
         private long activeDateTime;
     }
 }

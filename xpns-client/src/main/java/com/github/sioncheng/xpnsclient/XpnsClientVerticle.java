@@ -118,7 +118,7 @@ public class XpnsClientVerticle extends AbstractVerticle {
 
         JsonCommand jsonCommand = JsonCommand.create(Command.REQUEST, jsonObject);
 
-        writeCommand(jsonCommand);
+        writeCommand(jsonCommand, Command.REQUEST);
     }
 
     private void handlePeriodic(long l) {
@@ -133,25 +133,17 @@ public class XpnsClientVerticle extends AbstractVerticle {
             jsonObject.put(JsonCommand.COMMAND_CODE, JsonCommand.HEART_BEAT_CODE);
             JsonCommand jsonCommand = JsonCommand.create(Command.HEARTBEAT, jsonObject);
 
-            writeCommand(jsonCommand);
+            writeCommand(jsonCommand, Command.REQUEST);
         }
     }
 
     private void handelNotification(JsonCommand jsonCommand) {
-        jsonCommand.setCommandCode(JsonCommand.ACK_CODE);
-
-        writeCommand(jsonCommand);
+        writeCommand(jsonCommand.cloneWithCommandCode(JsonCommand.ACK_CODE), Command.RESPONSE);
     }
 
-    private void writeCommand(JsonCommand jsonCommand) {
+    private void writeCommand(JsonCommand jsonCommand, byte commandType) {
         try {
-            Command command = new Command();
-            command.setSerialNumber(jsonCommand.getSerialNumber());
-            command.setCommandType(jsonCommand.getCommandType());
-            command.setSerializationType(Command.JSON_SERIALIZATION);
-            byte[] payload = jsonCommand.getCommandObject().toJSONString().getBytes("UTF-8");
-            command.setPayloadLength(payload.length);
-            command.setPayloadBytes(payload);
+            Command command = Command.createJsonCommand(jsonCommand, commandType);
 
             netSocket.write(Buffer.buffer(CommandUtil.serializeCommand(command)));
 
