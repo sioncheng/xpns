@@ -37,7 +37,7 @@
     </appender>
 
     <root level="${log.level}">
-        <appender-ref ref="STDOUT" />
+        <appender-ref ref="${log.stdout}" />
         <appender-ref ref="ASYNC" />
     </root>
 

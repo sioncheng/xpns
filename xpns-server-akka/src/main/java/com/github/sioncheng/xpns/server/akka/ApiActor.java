@@ -82,7 +82,7 @@ public class ApiActor extends AbstractActor {
 
         http = Http.createExtension((ExtendedActorSystem) getContext().getSystem());
         bind = http.bindAndHandle(routeFlow,
-                ConnectHttp.toHost(apiHost, apiPort),
+                ConnectHttp.toHost("0.0.0.0", apiPort),
                 actorMaterializer);
     }
 

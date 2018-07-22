@@ -7,12 +7,25 @@ import akka.io.Tcp;
 
 import akka.actor.AbstractActor;
 import akka.io.TcpMessage;
+import akka.kafka.ProducerSettings;
+import akka.kafka.javadsl.Producer;
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONObject;
 import com.github.sioncheng.xpns.common.client.Notification;
 import com.github.sioncheng.xpns.common.config.AppProperties;
+import com.github.sioncheng.xpns.common.date.DateFormatPatterns;
+import com.github.sioncheng.xpns.common.storage.NotificationEntity;
+import com.typesafe.config.Config;
+import com.typesafe.config.ConfigFactory;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.time.DateFormatUtils;
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.serialization.StringSerializer;
 
 import java.net.InetSocketAddress;
 import java.time.Duration;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
@@ -31,7 +44,7 @@ public class ServerActor extends AbstractActor {
     @Override
     public void preStart() throws Exception {
         startSessionActor();
-
+        startKafkaProducer();
         super.preStart();
     }
 
@@ -39,7 +52,7 @@ public class ServerActor extends AbstractActor {
     public Receive createReceive() {
 
         return receiveBuilder()
-                .match(Start.class, msg -> start())
+                .match(Start.class, msg -> startTcpServer())
                 .match(Tcp.Bound.class, msg -> {
                     logger.info("bound");
                 })
@@ -62,7 +75,16 @@ public class ServerActor extends AbstractActor {
         sessionActor = getContext().actorOf(props);
     }
 
-    private void start() {
+    private void startKafkaProducer() {
+        Map<String, String> appSettings = AppProperties.getPropertiesWithPrefix("kafka.producer.");
+        Config config = getContext().getSystem().settings().config().getConfig("akka.kafka.producer");
+        ProducerSettings<String, String> settings = ProducerSettings.create(config,
+                new StringSerializer(),
+                new StringSerializer()).withBootstrapServers(appSettings.get("bootstrap.servers"));
+        producer = settings.createKafkaProducer();
+    }
+
+    private void startTcpServer() {
 
         tcpManager = Tcp.createExtension((ExtendedActorSystem)getContext().getSystem()).manager();
 
@@ -146,6 +168,19 @@ public class ServerActor extends AbstractActor {
                 if (logger.isInfoEnabled()) {
                     logger.info(String.format("notification ack %s", activation.jsonObject().toJSONString()));
                 }
+                JSONObject jsonObject = activation.jsonObject();
+                Notification notification = jsonObject.getObject("notification", Notification.class);
+                NotificationEntity notificationEntity = new NotificationEntity();
+                notificationEntity.setStatus(NotificationEntity.DELIVERED);
+                notificationEntity.setStatusDateTime(DateFormatUtils.format(new Date(), DateFormatPatterns.ISO8601_WITH_MS));
+                notificationEntity.setCreateDateTime(DateFormatUtils.format(new Date(), DateFormatPatterns.ISO8601_WITH_MS));
+                notificationEntity.setTtl(0);
+                notificationEntity.setNotification(notification);
+
+                ProducerRecord<String, String> producerRecord = new ProducerRecord<>(AppProperties.getString("kafka-ack-topic"),
+                        notification.getTo(),
+                        JSON.toJSONString(notificationEntity));
+                producer.send(producerRecord);
                 break;
         }
     }
@@ -166,6 +201,8 @@ public class ServerActor extends AbstractActor {
     private ActorRef tcpManager;
 
     private ActorRef sessionActor;
+
+    private KafkaProducer<String, String> producer;
 
     private HashMap<String, ClientActivation> clients;
 
