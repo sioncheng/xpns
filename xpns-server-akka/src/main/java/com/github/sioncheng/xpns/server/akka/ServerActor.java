@@ -8,15 +8,14 @@ import akka.io.Tcp;
 import akka.actor.AbstractActor;
 import akka.io.TcpMessage;
 import akka.kafka.ProducerSettings;
-import akka.kafka.javadsl.Producer;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.github.sioncheng.xpns.common.client.Notification;
+import com.github.sioncheng.xpns.common.client.SessionInfo;
 import com.github.sioncheng.xpns.common.config.AppProperties;
 import com.github.sioncheng.xpns.common.date.DateFormatPatterns;
 import com.github.sioncheng.xpns.common.storage.NotificationEntity;
 import com.typesafe.config.Config;
-import com.typesafe.config.ConfigFactory;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.time.DateFormatUtils;
 import org.apache.kafka.clients.producer.KafkaProducer;
@@ -131,6 +130,18 @@ public class ServerActor extends AbstractActor {
                         AppProperties.getString("server.api.host"),
                         AppProperties.getInt("server.api.port"));
                 sessionActor.tell(sessionEvent, getSelf());
+
+                //
+                SessionInfo sessionInfo = new SessionInfo();
+                sessionInfo.setAcid(activation.acid());
+                sessionInfo.setServer(AppProperties.getString("server.api.host"));
+                sessionInfo.setPort(AppProperties.getInt("server.api.port"));
+
+                ProducerRecord<String, String> logonEvent =
+                        new ProducerRecord<>(AppProperties.getString("kafka-logon-topic"),
+                                activation.acid(),
+                                JSON.toJSONString(sessionInfo));
+                producer.send(logonEvent);
 
                 break;
             case ClientActivation.LOGOUT:
