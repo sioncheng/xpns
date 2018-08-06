@@ -46,22 +46,30 @@ public class ClientActor extends AbstractActor {
     }
 
     private void handleReceived(Tcp.Received received) {
-        System.out.println(Thread.currentThread().getName());
-        List<JsonCommand> commands = commandCodec.decode(received.data().asByteBuffer());
-        commands.forEach(c -> {
-            switch (c.getCommandCode()) {
-                case JsonCommand.LOGIN_CODE:
-                    handleLogin(c);
-                    break;
-                case JsonCommand.HEART_BEAT_CODE:
-                    handleHeartbeat(c);
-                    break;
-                case JsonCommand.ACK_CODE:
-                    handleAck(c);
-                    break;
-            }
-        });
+        List<JsonCommand> commands = null;
+        try {
+            commands = commandCodec.decode(received.data().asByteBuffer());
+        } catch (Error ex) {
+            logger.warning("decode error", ex);
+            getContext().stop(getSelf());
+            return;
+        }
 
+        if (commands != null) {
+            commands.forEach(c -> {
+                switch (c.getCommandCode()) {
+                    case JsonCommand.LOGIN_CODE:
+                        handleLogin(c);
+                        break;
+                    case JsonCommand.HEART_BEAT_CODE:
+                        handleHeartbeat(c);
+                        break;
+                    case JsonCommand.ACK_CODE:
+                        handleAck(c);
+                        break;
+                }
+            });
+        }
     }
 
     private void handleLogin(JsonCommand c) {

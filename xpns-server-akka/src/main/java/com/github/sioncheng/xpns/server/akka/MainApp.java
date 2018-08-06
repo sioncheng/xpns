@@ -24,7 +24,10 @@ public class MainApp {
                 server));
 
 
-        System.in.read();
+        int i = System.in.read();
+        while (i != (int)'q') {
+            i = System.in.read();
+        }
 
         actorSystem.terminate();
         actorSystem2.terminate();

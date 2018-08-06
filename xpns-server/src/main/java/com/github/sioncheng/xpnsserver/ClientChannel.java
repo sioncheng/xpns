@@ -93,6 +93,11 @@ public class ClientChannel extends SimpleChannelInboundHandler<Command> {
     @Override
     public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
         if (evt instanceof IdleStateEvent) {
+            if (logger.isInfoEnabled()) {
+                logger.info(String.format("client %s idle state event %s",
+                        acid,
+                        ((IdleStateEvent) evt).state().toString()));
+            }
             this.shutdown();
         } else {
             super.userEventTriggered(ctx, evt);

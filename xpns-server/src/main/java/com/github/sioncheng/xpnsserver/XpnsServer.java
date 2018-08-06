@@ -318,6 +318,28 @@ public class XpnsServer implements ClientChannelEventListener {
     private void handleHeartbeat(ClientCommand clientCommand) {
         clientCommand.command.setCommandType(Command.HEARTBEAT);
         clientCommand.clientChannel.writeCommand(clientCommand.command);
+
+        JSONObject jsonObject = null;
+        try {
+            jsonObject = JSON.parseObject(new String(clientCommand.command.getPayloadBytes(), "UTF-8"));
+        } catch (UnsupportedEncodingException ue) {
+            logger.warn("decode command error", ue);
+        }
+
+        if (jsonObject == null) {
+            clientCommand.clientChannel.shutdown();
+            return;
+        }
+
+        JsonCommand jsonCommand = JsonCommand.create(clientCommand.command.getSerialNumber(),
+                clientCommand.command.getCommandType(),
+                jsonObject);
+
+        SessionInfo sessionInfo = new SessionInfo();
+        sessionInfo.setAcid(jsonCommand.getAcid());
+        sessionInfo.setServer(this.serverConfig.getApiServer());
+        sessionInfo.setPort(this.serverConfig.getApiPort());
+        this.sessionManager.putClient(sessionInfo);
     }
 
     private void handleRequest(ClientCommand clientCommand) {
