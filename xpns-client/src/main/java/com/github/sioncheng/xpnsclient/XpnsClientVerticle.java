@@ -133,7 +133,7 @@ public class XpnsClientVerticle extends AbstractVerticle {
             jsonObject.put(JsonCommand.COMMAND_CODE, JsonCommand.HEART_BEAT_CODE);
             JsonCommand jsonCommand = JsonCommand.create(Command.HEARTBEAT, jsonObject);
 
-            writeCommand(jsonCommand, Command.REQUEST);
+            writeCommand(jsonCommand, Command.HEARTBEAT);
         }
     }
 

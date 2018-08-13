@@ -24,6 +24,8 @@ public class RedisSessionManagerGroup implements SessionManager {
                     threadWork(n);
                 }
             });
+            t.setName("redis-session-manager-group-thread-" + i);
+            t.setDaemon(true);
             this.threads.add(t);
             t.start();
         }

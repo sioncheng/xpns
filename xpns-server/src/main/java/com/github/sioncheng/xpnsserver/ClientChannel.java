@@ -83,7 +83,7 @@ public class ClientChannel extends SimpleChannelInboundHandler<Command> {
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
 
-        logger.warn("exception caught {}", cause);
+        logger.warn(String.format("%s exception caught %s", this.acid, cause.getMessage()));
 
         this.shutdown();
 
