@@ -22,6 +22,7 @@
         <module>xpns-server-vertx</module>
         <module>xpns-es</module>
         <module>xpns-server-akka</module>
+        <module>xpns-bench-soa</module>
     </modules>
 
     <properties>
