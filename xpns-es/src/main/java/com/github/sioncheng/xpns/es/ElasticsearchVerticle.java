@@ -103,7 +103,6 @@ public class ElasticsearchVerticle extends AbstractVerticle {
                             if ("created".equals(esResponseObject.getString("result"))) {
                                 commit(record);
                             }
-
                         });
                     })
                     .putHeader("Content-Type", "application/json;charset=UTF-8")

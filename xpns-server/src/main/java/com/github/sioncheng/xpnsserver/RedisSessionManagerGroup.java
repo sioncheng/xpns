@@ -1,6 +1,8 @@
 package com.github.sioncheng.xpnsserver;
 
 import com.github.sioncheng.xpns.common.client.SessionInfo;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -36,6 +38,10 @@ public class RedisSessionManagerGroup implements SessionManager {
     }
 
     public void putClient(SessionInfo sessionInfo) {
+        if (logger.isInfoEnabled()) {
+            logger.info(String.format("put client %s", sessionInfo.getAcid()));
+        }
+
         String acid = sessionInfo.getAcid();
 
         this.putClientQueues.get(hashAcid(acid)).add(sessionInfo);
@@ -78,4 +84,6 @@ public class RedisSessionManagerGroup implements SessionManager {
     private List<Thread> threads;
 
     private volatile boolean stop;
+
+    private static final Logger logger = LoggerFactory.getLogger(RedisSessionManagerGroup.class);
 }

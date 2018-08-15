@@ -23,5 +23,7 @@ public class MainApp {
                 commandArguments.getMaxClients()));
 
         System.in.read();
+
+        vertx.close();
     }
 }

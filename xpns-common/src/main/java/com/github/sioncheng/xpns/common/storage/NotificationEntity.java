@@ -7,10 +7,10 @@ public class NotificationEntity {
     public static final int NEW = 0;
     public static final int DEQUEUE = 1;
     public static final int SENT = 2;
-    public static final int UNDELIVER = 3;
-    public static final int DELIVERED = 4;
-    public static final int OFFLINE = 5;
-    public static final int RESEND = 6;
+    public static final int OFFLINE = 3;
+    public static final int RESEND = 4;
+    public static final int UNDELIVER = 5;
+    public static final int DELIVERED = 6;
 
     public NotificationEntity clone() {
         NotificationEntity notificationEntity = new NotificationEntity();

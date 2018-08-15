@@ -15,14 +15,21 @@ import io.vertx.core.Handler;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.eventbus.Message;
 import io.vertx.core.http.HttpClient;
+import io.vertx.core.json.JsonArray;
+import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
+import io.vertx.ext.asyncsql.AsyncSQLClient;
+import io.vertx.ext.asyncsql.MySQLClient;
 import io.vertx.kafka.client.common.TopicPartition;
 import io.vertx.kafka.client.consumer.KafkaConsumer;
 import io.vertx.kafka.client.consumer.KafkaConsumerRecord;
 import io.vertx.kafka.client.consumer.OffsetAndMetadata;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.time.DateFormatUtils;
+import org.apache.commons.lang3.time.DateUtils;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.*;
 import org.apache.hadoop.hbase.filter.CompareFilter;
@@ -51,7 +58,12 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
 
         this.httpClient = vertx.createHttpClient();
 
-        this.connection = ConnectionFactory.createConnection();
+        if ("hbase".equalsIgnoreCase(AppProperties.getString("store.type"))) {
+            initHbase();
+        }
+        if ("mysql".equalsIgnoreCase(AppProperties.getString("store.type"))) {
+            initMariaDb();
+        }
 
         vertx.eventBus().consumer(this.xpnsServicesEventAddress, this::xpnsServiceEventHandler);
 
@@ -63,6 +75,32 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
     @Override
     public void stop() throws Exception {
         super.stop();
+    }
+
+    private void initHbase() throws Exception {
+        Map<String, String> hbaseConf = AppProperties.getPropertiesStartwith("hbase");
+        Configuration configuration = HBaseConfiguration.create();
+        for (Map.Entry<String, String> hconf :
+                hbaseConf.entrySet()) {
+            configuration.set(hconf.getKey(), hconf.getValue());
+        }
+        this.connection = ConnectionFactory.createConnection(configuration);
+    }
+
+    private void initMariaDb() {
+        Map<String, String> appConf = AppProperties.getPropertiesWithPrefix("mysql.");
+
+        JsonObject confJson = new JsonObject();
+        for (Map.Entry<String, String> conf:
+             appConf.entrySet()) {
+            if (StringUtils.isNumeric(conf.getValue())) {
+                confJson.put(conf.getKey(), Integer.parseInt(conf.getValue()));
+            } else {
+                confJson.put(conf.getKey(), conf.getValue());
+            }
+        }
+
+        this.asyncSQLClient = MySQLClient.createShared(vertx, confJson);
     }
 
     private void startDiscoverServices() {
@@ -202,7 +240,7 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
                 notificationHbase.setStatus(NotificationEntity.DELIVERED);
                 notificationHbase.setStatusDateTime(DateFormatUtils.format(new Date(), DateFormatPatterns.ISO8601_WITH_MS));
 
-                putToHBase(notificationHbase);
+                storeNotification(notificationHbase);
             }
         }
 
@@ -216,7 +254,7 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
             notificationHbase.setStatus(NotificationEntity.OFFLINE);
             notificationHbase.setStatusDateTime(DateFormatUtils.format(new Date(), DateFormatPatterns.ISO8601_WITH_MS));
 
-            Exception exception = putToHBase(notificationHbase);
+            Exception exception = storeNotification(notificationHbase);
             if (exception == null) {
                 future.complete();
             } else {
@@ -238,7 +276,15 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
 
     }
 
-    private Exception putToHBase(NotificationEntity entity)  {
+    private Exception storeNotification(NotificationEntity entity)  {
+        if ("hbase".equalsIgnoreCase(AppProperties.getString("store.type"))) {
+            return putToHBase(entity);
+        } else {
+            return putToMariaDb(entity);
+        }
+    }
+
+    private Exception putToHBase(NotificationEntity entity) {
         Exception exception = null;
         Table table = null;
         try {
@@ -276,6 +322,39 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
             }
         }
 
+        return exception;
+    }
+
+    private Exception putToMariaDb(NotificationEntity entity) {
+        Exception exception = null;
+
+        try {
+            //acid, create_date_time, ttl, ttl_date_time , status, status_date_time
+            //notification
+            JsonArray parameters = new JsonArray();
+            parameters.add(entity.getNotification().getTo());
+            parameters.add(entity.getCreateDateTime());
+            parameters.add(entity.getTtl());
+            Date ttlDateTime = new Date(DateUtils.parseDate(entity.getCreateDateTime(), DateFormatPatterns.ISO8601_WITH_MS)
+                    .getTime() + entity.getTtl() * 1000);
+            parameters.add(DateFormatUtils.format(ttlDateTime, DateFormatPatterns.ISO8601_WITH_MS));
+            parameters.add(entity.getStatus());
+            parameters.add(entity.getStatusDateTime());
+            parameters.add(JSONObject.toJSONString(entity.getNotification()));
+            parameters.add(entity.getNotification().getUniqId());
+            asyncSQLClient.updateWithParams("insert into notification(acid, create_date_time, " +
+                            "ttl, ttl_date_time, status, status_date_time, notification, uuid) " +
+                            "values (?,?,?,?,?,?,?,?) ",
+                    parameters,
+                    asyncResult -> {
+                        if (asyncResult.failed()) {
+                            logger.warn("insert into notification error " + asyncResult.cause().getMessage());
+                        }
+                    });
+
+        } catch (Exception ex) {
+            exception = ex;
+        }
         return exception;
     }
 
@@ -353,7 +432,7 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
 
                         vertx.eventBus().send(KafkaEsVerticle.NotificationEntityESEventAddress, JSON.toJSONString(entityEs));
 
-                        putToHBase(entityEs);
+                        storeNotification(entityEs);
                     }))
                     .write(Buffer.buffer(requestData)).end();
         } catch (Exception ex) {
@@ -408,6 +487,14 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
     }
 
     private Exception mayResendNotification(SessionInfo sessionInfo) {
+        if ("hbase".equalsIgnoreCase(AppProperties.getString("store.type"))) {
+            return mayResendNotificationFromHBase(sessionInfo);
+        } else {
+            return mayResendNotificationFromMariaDb(sessionInfo);
+        }
+    }
+
+    private Exception mayResendNotificationFromHBase(SessionInfo sessionInfo) {
         Exception exception = null;
         Table table = null;
         ResultScanner scanner = null;
@@ -448,12 +535,6 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
                 offlineEntity.setCreateDateTime(createDateTime);
                 offlineEntity.setNotification(JSON.parseObject(notification, Notification.class));
 
-                NotificationEntity entityEs = offlineEntity.clone();
-                entityEs.setStatus(NotificationEntity.RESEND);
-                entityEs.setStatusDateTime(DateFormatUtils.format(new Date(), DateFormatPatterns.ISO8601_WITH_MS));
-
-                vertx.eventBus().send(KafkaEsVerticle.NotificationEntityESEventAddress, JSON.toJSONString(entityEs));
-
                 resendNotification(offlineEntity, sessionInfo);
 
                 result = scanner.next();
@@ -478,10 +559,91 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
         return exception;
     }
 
-    private void resendNotification(NotificationEntity entity, SessionInfo sessionInfo) {
+    private Exception mayResendNotificationFromMariaDb(final SessionInfo sessionInfo) {
+        Exception exception = null;
+
+        JsonArray parameters = new JsonArray();
+        parameters.add(sessionInfo.getAcid());
+
+        this.asyncSQLClient.queryWithParams ("select id, acid, create_date_time , ttl, ttl_date_time," +
+                " status, status_date_time, notification, uuid from notification " +
+                " where acid = ? and ttl_date_time > current_timestamp ",
+                parameters,
+                asyncResult -> {
+                    if (asyncResult.succeeded()) {
+                        List<JsonObject> rows = asyncResult.result().getRows();
+                        if (logger.isInfoEnabled()) {
+                            logger.info(String.format("got %d records for %s", rows.size(), sessionInfo.getAcid()));
+                        }
+
+                        HashMap<String, List<JsonObject>> resultGroup=new HashMap<>();
+                        List<String> delivered = new ArrayList<>();
+                        for (JsonObject row :
+                                rows) {
+                            String uuid = row.getString("uuid");
+                            List<JsonObject> list;
+                            if (resultGroup.containsKey(uuid)) {
+                                list = resultGroup.get(uuid);
+                            } else {
+                                list = new ArrayList<>();
+                                resultGroup.put(uuid, list);
+                            }
+
+                            list.add(row);
+                            if (logger.isInfoEnabled()) {
+                                logger.info(String.format("add %s for %s", uuid, sessionInfo.getAcid()));
+                            }
+
+                            if (NotificationEntity.DELIVERED == row.getInteger("status")) {
+                                delivered.add(uuid);
+                                if (logger.isInfoEnabled()) {
+                                    logger.info(String.format("skip delivered records %s %s", uuid, sessionInfo.getAcid()));
+                                }
+                            }
+                        }
+
+                        for (String uuid :
+                                delivered) {
+                            resultGroup.remove(uuid);
+                        }
+
+                        if (logger.isInfoEnabled()) {
+                            logger.info(String.format("resultGroup size %d for %s", resultGroup.size(), sessionInfo.getAcid()));
+                        }
+
+                        for (Map.Entry<String, List<JsonObject>> result :
+                            resultGroup.entrySet()) {
+                            JsonObject row = result.getValue().get(0);
+
+                            NotificationEntity offlineEntity = new NotificationEntity();
+
+                            offlineEntity.setCreateDateTime(row.getString("create_date_time"));
+                            offlineEntity.setNotification(JSONObject.parseObject(row.getString("notification"),
+                                    Notification.class));
+                            offlineEntity.setStatus(row.getInteger("status"));
+                            offlineEntity.setStatusDateTime(row.getString("status_date_time"));
+                            offlineEntity.setTtl(row.getInteger("ttl"));
+
+                            if (logger.isInfoEnabled()) {
+                                logger.info(String.format("resend %s", row.getString("notification")));
+                            }
+                            resendNotification(offlineEntity, sessionInfo);
+
+                        }
+                    } else {
+                        logger.warn("mayResendNotificationFromMariaDb error " + asyncResult.cause().getMessage());
+                    }
+                }) ;
+
+        return exception;
+    }
+
+
+    private void resendNotification(final NotificationEntity offlineEntity,
+                                    SessionInfo sessionInfo) {
         try {
 
-            byte[] requestData = entity.getNotification().toJSONObject().toJSONString()
+            byte[] requestData = offlineEntity.getNotification().toJSONObject().toJSONString()
                     .getBytes("UTF-8");
 
             HttpClient httpClient = vertx.createHttpClient();
@@ -489,7 +651,7 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
                     .putHeader("Content-Type", "application/json;charset=UTF-8")
                     .putHeader("Content-Length", String.valueOf(requestData.length))
                     .exceptionHandler(t -> {
-                        logger.warn(t);
+                        logger.warn("resendNotification error " + t.getMessage());
                     })
                     .handler(response -> response.bodyHandler(responseBody -> {
                         String s = new String(responseBody.getBytes());
@@ -497,18 +659,16 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
                             logger.info(s);
                         }
 
-                        NotificationEntity entityEs = entity.clone();
-                        entityEs.setStatus(NotificationEntity.SENT);
+                        NotificationEntity entityEs = offlineEntity.clone();
+                        entityEs.setStatus(NotificationEntity.RESEND);
                         entityEs.setStatusDateTime(DateFormatUtils.format(new Date(), DateFormatPatterns.ISO8601_WITH_MS));
 
                         vertx.eventBus().send(KafkaEsVerticle.NotificationEntityESEventAddress, JSON.toJSONString(entityEs));
-
-                        putToHBase(entityEs);
                     }))
                     .write(Buffer.buffer(requestData)).end();
         } catch (Exception ex) {
             String message = String.format("send notification error %s",
-                    entity.getNotification().toJSONObject().toJSONString());
+                    offlineEntity.getNotification().toJSONObject().toJSONString());
             logger.warn(message, ex);
         }
     }
@@ -523,6 +683,8 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
     private HttpClient httpClient;
 
     private Connection connection;
+
+    private AsyncSQLClient asyncSQLClient;
 
     private String xpnsServicesEventAddress;
     private List<String> services;

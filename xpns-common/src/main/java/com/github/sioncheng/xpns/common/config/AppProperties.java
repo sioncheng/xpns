@@ -41,6 +41,21 @@ public class AppProperties {
         return result;
     }
 
+
+    public static Map<String, String> getPropertiesStartwith(String prefix) {
+        Map<String, String> result = new HashMap<>();
+
+        for (Map.Entry<String, String> entry :
+                properties.entrySet()) {
+            String key = entry.getKey();
+            if (StringUtils.startsWith(key, prefix)) {
+                result.put(key, entry.getValue());
+            }
+        }
+
+        return result;
+    }
+
     private static void loadDefault() throws IOException {
         InputStream inputStream =
                 AppProperties.class.getClassLoader().getResourceAsStream("app.properties");

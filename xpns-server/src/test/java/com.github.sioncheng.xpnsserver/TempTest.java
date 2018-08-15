@@ -9,11 +9,21 @@ import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import org.junit.Test;
 
+import java.util.UUID;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.ForkJoinTask;
 import java.util.concurrent.RecursiveTask;
 
 public class TempTest {
+
+    @Test
+    public void TestHash() {
+        String acid = "1_aaaaaaaaaa0000000003";
+
+        System.out.println(Math.abs(acid.charAt(acid.length() - 1)) % 4);
+
+        System.out.println(UUID.randomUUID().toString());
+    }
 
     @Test
     public void test() throws Exception {
