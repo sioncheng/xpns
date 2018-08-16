@@ -184,6 +184,7 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
         }
 
         if (AppProperties.getString("kafka-logon-topic").equals(record.topic())) {
+            kafkaConsumer.commit(generateCommitOffset(record));
             this.kafkaConsumerLogonHandler(record);
         } else {
             this.kafkaConsumerNotificationHandler(record);
@@ -209,6 +210,7 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
         }
 
         if (this.services == null || this.services.size() == 0) {
+            logger.warn("no xpns services");
             offlineNotificationEntity(notificationEntity, record);
             return;
         }
@@ -227,8 +229,9 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
             this.sendNotification(notificationEntity, record);
         } else {
             if (logger.isInfoEnabled()) {
-                logger.info(String.format("dispatch notification status %s",
-                        notificationEntity.getNotification().toJSONObject().toString()));
+                logger.info(String.format("dispatch notification %s status %d",
+                        notificationEntity.getNotification().getUniqId(),
+                        notificationEntity.getStatus()));
             }
             NotificationEntity entityEs = notificationEntity.clone();
             entityEs.setStatusDateTime(DateFormatUtils.format(new Date(), DateFormatPatterns.ISO8601_WITH_MS));
@@ -236,12 +239,18 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
             vertx.eventBus().send(KafkaEsVerticle.NotificationEntityESEventAddress, JSON.toJSONString(entityEs));
 
             if (notificationEntity.getStatus() == NotificationEntity.DELIVERED) {
-                NotificationEntity notificationHbase = notificationEntity.clone();
-                notificationHbase.setStatus(NotificationEntity.DELIVERED);
-                notificationHbase.setStatusDateTime(DateFormatUtils.format(new Date(), DateFormatPatterns.ISO8601_WITH_MS));
+                if (logger.isInfoEnabled()) {
+                    logger.info(String.format("save delivered notification %s ",
+                            notificationEntity.getNotification().getUniqId()));
+                }
 
-                storeNotification(notificationHbase);
+                Exception exception = storeNotification(notificationEntity.clone());
+                if (exception != null) {
+                    logger.warn(String.format("store notification error %s", exception.getMessage()));
+                }
             }
+
+            kafkaConsumer.commit(generateCommitOffset(record));
         }
 
     }
@@ -305,9 +314,6 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
             put.addColumn(family, "statusDateTime".getBytes(), entity.getStatusDateTime().getBytes());
             put.addColumn(family, "notification".getBytes(), notification.toJSONObject().toJSONString().getBytes("UTF-8"));
 
-
-
-
             table = connection.getTable(TableName.valueOf("notification"));
             table.put(put);
 
@@ -326,20 +332,30 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
     }
 
     private Exception putToMariaDb(NotificationEntity entity) {
+
+        if (NotificationEntity.DELIVERED == entity.getStatus() &&
+                StringUtils.isEmpty(entity.getCreateDateTime())) {
+            refillAndPutToDb(entity);
+            return null;
+        }
+
         Exception exception = null;
 
         try {
             //acid, create_date_time, ttl, ttl_date_time , status, status_date_time
             //notification
+
+            Date createDateTime = DateUtils.parseDate(entity.getCreateDateTime(), DateFormatPatterns.ISO8601_WITH_MS);
+            Date statusDateTime = DateUtils.parseDate(entity.getStatusDateTime(), DateFormatPatterns.ISO8601_WITH_MS);
+
             JsonArray parameters = new JsonArray();
             parameters.add(entity.getNotification().getTo());
             parameters.add(entity.getCreateDateTime());
             parameters.add(entity.getTtl());
-            Date ttlDateTime = new Date(DateUtils.parseDate(entity.getCreateDateTime(), DateFormatPatterns.ISO8601_WITH_MS)
-                    .getTime() + entity.getTtl() * 1000);
-            parameters.add(DateFormatUtils.format(ttlDateTime, DateFormatPatterns.ISO8601_WITH_MS));
+            Date ttlDateTime = new Date(createDateTime.getTime() + entity.getTtl() * 1000);
+            parameters.add(DateFormatUtils.format(ttlDateTime, DateFormatPatterns.NORMAL_T_WITH_MS));
             parameters.add(entity.getStatus());
-            parameters.add(entity.getStatusDateTime());
+            parameters.add(DateFormatUtils.format(statusDateTime, DateFormatPatterns.NORMAL_T_WITH_MS));
             parameters.add(JSONObject.toJSONString(entity.getNotification()));
             parameters.add(entity.getNotification().getUniqId());
             asyncSQLClient.updateWithParams("insert into notification(acid, create_date_time, " +
@@ -356,6 +372,52 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
             exception = ex;
         }
         return exception;
+    }
+
+    private Exception refillAndPutToDb(NotificationEntity entity) {
+        JsonArray jsonArray = new JsonArray();
+        jsonArray.add(entity.getNotification().getTo());
+        jsonArray.add(entity.getNotification().getUniqId());
+
+        asyncSQLClient.queryWithParams("select acid, create_date_time, " +
+                        "ttl, ttl_date_time, status, status_date_time, notification, uuid " +
+                        "from notification where acid = ? and uuid = ? ",
+                jsonArray,
+                asyncResult -> {
+                    if (asyncResult.succeeded()) {
+                        List<JsonObject> rows = asyncResult.result().getRows();
+                        if (rows.size() == 0) {
+                            logger.warn("cant find previous entity");
+                        } else {
+                            JsonObject row = rows.get(0);
+                            NotificationEntity deliveredEntity = new NotificationEntity();
+
+                            try {
+                                Date createDateTime = DateUtils.parseDate(row.getString("create_date_time"),
+                                        DateFormatPatterns.NORMAL_T_WITH_MS);
+
+                                deliveredEntity.setCreateDateTime(DateFormatUtils.format(createDateTime,
+                                        DateFormatPatterns.ISO8601_WITH_MS));
+                                deliveredEntity.setNotification(JSONObject.parseObject(row.getString("notification"),
+                                        Notification.class));
+                                deliveredEntity.setStatus(NotificationEntity.DELIVERED);
+                                deliveredEntity.setStatusDateTime(DateFormatUtils.format(new Date(),
+                                        DateFormatPatterns.ISO8601_WITH_MS));
+                                deliveredEntity.setTtl(row.getInteger("ttl"));
+                                Exception ex = putToMariaDb(deliveredEntity);
+                                if (ex != null) {
+                                    logger.warn("refillAndPutToDb error " + ex.getMessage());
+                                }
+                            } catch (Exception ex) {
+                                logger.warn("refillAndPutToDb error " + ex.getMessage());
+                            }
+                        }
+                    } else {
+                        logger.warn("refillAndPutToDb error " + asyncResult.cause().getMessage());
+                    }
+                } );
+
+        return null;
     }
 
     private void sendNotification(final NotificationEntity entity,
@@ -414,7 +476,7 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
                     .putHeader("Content-Type", "application/json;charset=UTF-8")
                     .putHeader("Content-Length", String.valueOf(requestData.length))
                     .exceptionHandler(t -> {
-                        logger.warn(t);
+                        logger.warn(String.format("doRealSend error %s", t.getMessage()));
 
                         offlineNotificationEntity(entity, record);
                     })
@@ -613,22 +675,32 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
 
                         for (Map.Entry<String, List<JsonObject>> result :
                             resultGroup.entrySet()) {
-                            JsonObject row = result.getValue().get(0);
+                            try {
+                                JsonObject row = result.getValue().get(0);
 
-                            NotificationEntity offlineEntity = new NotificationEntity();
+                                NotificationEntity offlineEntity = new NotificationEntity();
 
-                            offlineEntity.setCreateDateTime(row.getString("create_date_time"));
-                            offlineEntity.setNotification(JSONObject.parseObject(row.getString("notification"),
-                                    Notification.class));
-                            offlineEntity.setStatus(row.getInteger("status"));
-                            offlineEntity.setStatusDateTime(row.getString("status_date_time"));
-                            offlineEntity.setTtl(row.getInteger("ttl"));
+                                Date createDateTime = DateUtils.parseDate(row.getString("create_date_time"),
+                                        DateFormatPatterns.NORMAL_T_WITH_MS);
+                                Date statusDateTime = DateUtils.parseDate(row.getString("status_date_time"),
+                                        DateFormatPatterns.NORMAL_T_WITH_MS);
 
-                            if (logger.isInfoEnabled()) {
-                                logger.info(String.format("resend %s", row.getString("notification")));
+                                offlineEntity.setCreateDateTime(DateFormatUtils.format(createDateTime,
+                                        DateFormatPatterns.ISO8601_WITH_MS));
+                                offlineEntity.setNotification(JSONObject.parseObject(row.getString("notification"),
+                                        Notification.class));
+                                offlineEntity.setStatus(row.getInteger("status"));
+                                offlineEntity.setStatusDateTime(DateFormatUtils.format(statusDateTime,
+                                        DateFormatPatterns.ISO8601_WITH_MS));
+                                offlineEntity.setTtl(row.getInteger("ttl"));
+
+                                if (logger.isInfoEnabled()) {
+                                    logger.info(String.format("resend %s", row.getString("notification")));
+                                }
+                                resendNotification(offlineEntity, sessionInfo);
+                            } catch (Exception ex) {
+                                logger.warn("mayResendNotificationFromMariaDb error " + ex.getMessage());
                             }
-                            resendNotification(offlineEntity, sessionInfo);
-
                         }
                     } else {
                         logger.warn("mayResendNotificationFromMariaDb error " + asyncResult.cause().getMessage());
