@@ -8,9 +8,7 @@ import io.vertx.core.Future;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.redis.RedisOptions;
-import org.apache.zookeeper.CreateMode;
-import org.apache.zookeeper.ZooDefs;
-import org.apache.zookeeper.ZooKeeper;
+import org.apache.zookeeper.*;
 
 import java.util.Map;
 
@@ -95,21 +93,42 @@ public class XpnsServer extends AbstractVerticle {
         try {
             String zkServers = AppProperties.getString("zookeeper.servers");
 
-            this.zooKeeper = new ZooKeeper(zkServers, 5000, null);
+            this.zooKeeper = new ZooKeeper(zkServers, 5000, new Watcher() {
+                @Override
+                public void process(WatchedEvent watchedEvent) {
+                    if ("SyncConnected".equalsIgnoreCase(watchedEvent.getState().name())) {
+                        try {
+                            String root = Directories.XPNS_SERVER_ROOT;
+                            if (XpnsServer.this.zooKeeper.exists(root, false) == null) {
+                                XpnsServer.this.zooKeeper.create(root, null, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+                            }
 
-            String root = Directories.XPNS_SERVER_ROOT;
-            if (this.zooKeeper.exists(root, false) == null) {
-                this.zooKeeper.create(root, null, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
-            }
+                            String apiServices = root + "/" + Directories.API_SERVICES;
+                            if (XpnsServer.this.zooKeeper.exists(apiServices, false) == null) {
+                                XpnsServer.this.zooKeeper.create(apiServices, null, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+                            }
 
-            String apiServices = root + "/" + Directories.API_SERVICES;
-            if (this.zooKeeper.exists(apiServices, false) == null) {
-                this.zooKeeper.create(apiServices, null, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
-            }
+                            String servicePath = apiServices + "/" +
+                                    XpnsServer.this.serverConfig.getApiHost() + ":" +
+                                    XpnsServer.this.serverConfig.getApiPort();
+                            XpnsServer.this.zooKeeper.create(servicePath, null, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
+                        } catch (Exception ex) {
 
-            String servicePath = apiServices + "/" +
-                    this.serverConfig.getApiHost() + ":" + this.serverConfig.getApiPort();
-            this.zooKeeper.create(servicePath, null, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
+                            logger.warn("create service node error ", ex);
+
+                            if (zooKeeper != null) {
+                                try {
+                                    zooKeeper.close();
+                                } catch (Exception ex2 ) {
+
+                                }
+                            }
+
+                            startZookeeper();
+                        }
+                    }
+                }
+            });
 
             f.complete();
         } catch (Exception ex) {

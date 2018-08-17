@@ -21,6 +21,7 @@ import org.apache.zookeeper.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
@@ -211,27 +212,53 @@ public class XpnsServer implements ClientChannelEventListener {
         }
     }
 
-    private void registerToZk() throws Exception {
+    private void registerToZk() throws IOException  {
         this.zooKeeper = new ZooKeeper(this.zkServers, 5000, new Watcher() {
             @Override
             public void process(WatchedEvent watchedEvent) {
+                logger.info(String.format("zookeeper watched event %s , %s, %s ",
+                        watchedEvent.getPath(),
+                        watchedEvent.getState().name(),
+                        watchedEvent.getType().name()));
 
+                if ("SyncConnected".equalsIgnoreCase(watchedEvent.getState().name())) {
+                    try {
+                        String root = Directories.XPNS_SERVER_ROOT;
+                        if (zooKeeper.exists(root, false) == null) {
+                            zooKeeper.create(root, null, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+                        }
+
+                        String apiServices = root + "/" + Directories.API_SERVICES;
+                        if (zooKeeper.exists(apiServices, false) == null) {
+                            zooKeeper.create(apiServices, null, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
+                        }
+
+                        String servicePath = apiServices + "/" +
+                                serverConfig.getApiServer() + ":" + serverConfig.getApiPort();
+                        zooKeeper.create(servicePath, null, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
+                    } catch (Exception ex) {
+
+                        logger.warn("create service node error ", ex);
+
+                        if (zooKeeper != null) {
+                            try {
+                                zooKeeper.close();
+                            } catch (Exception ex2 ) {
+
+                            }
+                        }
+
+                        try {
+                            registerToZk();
+                        } catch (Exception ex3) {
+                            logger.warn("re-registerToZk error", ex3);
+                        }
+                    }
+                }
             }
         });
 
-        String root = Directories.XPNS_SERVER_ROOT;
-        if (this.zooKeeper.exists(root, false) == null) {
-            this.zooKeeper.create(root, null, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
-        }
 
-        String apiServices = root + "/" + Directories.API_SERVICES;
-        if (this.zooKeeper.exists(apiServices, false) == null) {
-            this.zooKeeper.create(apiServices, null, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
-        }
-
-        String servicePath = apiServices + "/" +
-                this.serverConfig.getApiServer() + ":" + this.serverConfig.getApiPort();
-        this.zooKeeper.create(servicePath, null, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL);
     }
 
     private void workerThreadMethod(int i) {
@@ -543,7 +570,7 @@ public class XpnsServer implements ClientChannelEventListener {
     private SessionManager sessionManager;
     private KafkaProducerManager kafkaProducerManager;
     private String zkServers;
-    private ZooKeeper zooKeeper;
+    private volatile ZooKeeper zooKeeper;
 
     private NioEventLoopGroup eventLoopGroupMaster;
     private NioEventLoopGroup eventLoopGroup;
