@@ -42,9 +42,13 @@ import java.util.*;
 
 public class KafkaNotificationVerticle extends AbstractVerticle implements Watcher {
 
-    public KafkaNotificationVerticle(Map<String, String> config, Set<String> topics, String zkServers) {
+    public KafkaNotificationVerticle(Map<String, String> config,
+                                     Set<String> notificationTopics,
+                                     String logonTopic,
+                                     String zkServers) {
         this.config = config;
-        this.topics = topics;
+        this.notificationTopics = notificationTopics;
+        this.logonTopic = logonTopic;
         this.zkServers = zkServers;
         this.xpnsServicesEventAddress = "xpns.services." + this.hashCode();
         this.rand = new Random();
@@ -104,7 +108,7 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
     }
 
     private void startDiscoverServices() {
-        vertx.executeBlocking(this::discoverServices, this::disoverServicesHandler);
+        vertx.executeBlocking(this::discoverServices, this::discoverServicesHandler);
     }
 
     private void discoverServices(Future f) {
@@ -145,9 +149,22 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
         }
     }
 
-    private void disoverServicesHandler(AsyncResult result) {
+    private void discoverServicesHandler(AsyncResult result) {
         if (result.succeeded()) {
             this.startConsumer();
+
+            vertx.setPeriodic(1000, l-> {
+               int qps = AppProperties.getInt("notification.qps");
+               if (consumingCounter <= 0) {
+                   if (logger.isInfoEnabled()) {
+                       logger.info("resume kafkaConsumer4Notification");
+                   }
+                   consumingCounter = qps;
+                   kafkaConsumer4Notification.resume();
+               } else if(consumingCounter < qps) {
+                   consumingCounter = qps;
+               }
+            });
         }
     }
 
@@ -165,33 +182,35 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
     }
 
     private void startConsumer() {
-        this.kafkaConsumer = KafkaConsumer.create(vertx, config);
-        this.kafkaConsumer.handler(this::kafkaConsumerHandler);
-        this.kafkaConsumer.subscribe(this.topics, result -> {
+        this.kafkaConsumer4Notification = KafkaConsumer.create(vertx, config);
+        this.kafkaConsumer4Notification.handler(this::kafkaConsumeNotificationHandler);
+        this.kafkaConsumer4Notification.subscribe(this.notificationTopics, result -> {
             if (logger.isInfoEnabled()) {
-                logger.info(String.format("start notification kafka consumer %s", Boolean.toString(result.succeeded())));
+                logger.info(String.format("start notification kafka consumer %s",
+                        Boolean.toString(result.succeeded())));
             }
         });
+
+        this.kafkaConsumer4Logon = KafkaConsumer.create(vertx, config);
+        this.kafkaConsumer4Logon.handler(this::kafkaConsumeLogonHandler);
+        this.kafkaConsumer4Logon.subscribe(this.logonTopic, result -> {
+             if (logger.isInfoEnabled()) {
+                 logger.info("start logon kafka consumer %s",
+                         Boolean.toString(result.succeeded()));
+             }
+        });
+
     }
 
-    private void kafkaConsumerHandler(KafkaConsumerRecord<String, String> record) {
+    private void kafkaConsumeNotificationHandler(KafkaConsumerRecord<String, String> record) {
         if (logger.isInfoEnabled()) {
-            logger.info(String.format("got message key %s, value %s, partition %d, offset %d, topic %s", record.key(),
+            logger.info(String.format("got notification key %s, value %s, partition %d, offset %d, topic %s", record.key(),
                     record.value(),
                     record.partition(),
                     record.offset(),
                     record.topic()));
         }
 
-        if (AppProperties.getString("kafka-logon-topic").equals(record.topic())) {
-            kafkaConsumer.commit(generateCommitOffset(record));
-            this.kafkaConsumerLogonHandler(record);
-        } else {
-            this.kafkaConsumerNotificationHandler(record);
-        }
-    }
-
-    private void kafkaConsumerNotificationHandler(KafkaConsumerRecord<String, String> record) {
         if (logger.isInfoEnabled()) {
             logger.info(String.format("notification handler %s", record.value()));
         }
@@ -205,7 +224,7 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
 
 
         if (notificationEntity == null || notificationEntity.getNotification() == null) {
-            kafkaConsumer.commit(generateCommitOffset(record));
+            kafkaConsumer4Notification.commit(generateCommitOffset(record));
             return;
         }
 
@@ -216,6 +235,15 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
         }
 
         if (notificationEntity.getStatus() == NotificationEntity.NEW) {
+
+            this.consumingCounter -= 1;
+            if (this.consumingCounter <= 0) {
+                if (logger.isInfoEnabled()) {
+                    logger.info("pause kafkaConsumer4Notification");
+                }
+                kafkaConsumer4Notification.pause();
+            }
+
             if (logger.isInfoEnabled()) {
                 logger.info(String.format("dispatch new notification %s",
                         notificationEntity.getNotification().toJSONObject().toString()));
@@ -250,9 +278,46 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
                 }
             }
 
-            kafkaConsumer.commit(generateCommitOffset(record));
+            kafkaConsumer4Notification.commit(generateCommitOffset(record));
+        }
+    }
+
+    private void kafkaConsumeLogonHandler(KafkaConsumerRecord<String, String> record) {
+        if (logger.isInfoEnabled()) {
+            logger.info(String.format("got logon key %s, value %s, partition %d, offset %d, topic %s", record.key(),
+                    record.value(),
+                    record.partition(),
+                    record.offset(),
+                    record.topic()));
         }
 
+        this.kafkaConsumer4Logon.commit(generateCommitOffset(record));
+
+        SessionInfo sessionInfo = JSON.parseObject(record.value(), SessionInfo.class);
+
+        if (sessionInfo == null) {
+            logger.warn(String.format("unable to parse session info %s", record.value()));
+            return;
+        }
+
+        vertx.executeBlocking(future -> {
+                    Exception ex = mayResendNotification(sessionInfo);
+                    if (ex == null) {
+                        future.complete();
+                    } else {
+                        future.fail(ex);
+                    }
+                },
+                true,
+                result -> {
+                    if (result.succeeded()) {
+                        if (logger.isInfoEnabled()) {
+                            logger.info("may resend notification success");
+                        }
+                    } else {
+                        logger.warn("may resend notification error", result.cause());
+                    }
+                });
     }
 
     private void offlineNotificationEntity(NotificationEntity entity,
@@ -278,7 +343,7 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
             entityEs.setStatusDateTime(DateFormatUtils.format(new Date(), DateFormatPatterns.ISO8601_WITH_MS));
             vertx.eventBus().send(KafkaEsVerticle.NotificationEntityESEventAddress, JSON.toJSONString(entityEs));
             if (result.succeeded()) {
-                kafkaConsumer.commit(generateCommitOffset(record));
+                kafkaConsumer4Notification.commit(generateCommitOffset(record));
             }
         });
 
@@ -486,7 +551,7 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
                             logger.info(s);
                         }
 
-                        kafkaConsumer.commit(generateCommitOffset(record));
+                        kafkaConsumer4Notification.commit(generateCommitOffset(record));
 
                         NotificationEntity entityEs = entity.clone();
                         entityEs.setStatus(NotificationEntity.SENT);
@@ -518,34 +583,6 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
         offsets.put(topicPartition, offsetAndMetadata);
 
         return offsets;
-    }
-
-    private void kafkaConsumerLogonHandler(KafkaConsumerRecord<String, String> record) {
-        SessionInfo sessionInfo = JSON.parseObject(record.value(), SessionInfo.class);
-
-        if (sessionInfo == null) {
-            logger.warn(String.format("unable to parse session info %s", record.value()));
-            return;
-        }
-
-        vertx.executeBlocking(future -> {
-            Exception ex = mayResendNotification(sessionInfo);
-            if (ex == null) {
-                future.complete();
-            } else {
-                future.fail(ex);
-            }
-        },
-        true,
-        result -> {
-            if (result.succeeded()) {
-                if (logger.isInfoEnabled()) {
-                    logger.info("may resend notification success");
-                }
-            } else {
-                logger.warn("may resend notification error", result.cause());
-            }
-        });
     }
 
     private Exception mayResendNotification(SessionInfo sessionInfo) {
@@ -746,11 +783,14 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
     }
 
     private Map<String, String> config;
-    private Set<String> topics;
+    private Set<String> notificationTopics;
+    private String logonTopic;
     private String zkServers;
     private ZooKeeper zooKeeper;
 
-    private KafkaConsumer<String, String> kafkaConsumer;
+    private KafkaConsumer<String, String> kafkaConsumer4Notification;
+    private int consumingCounter = 0;
+    private KafkaConsumer<String, String> kafkaConsumer4Logon;
 
     private HttpClient httpClient;
 

@@ -25,10 +25,10 @@ public class MainApp {
         Set<String> topics = new HashSet<>();
         topics.add(AppProperties.getString("kafka-notification-topic"));
         topics.add(AppProperties.getString("kafka-ack-topic"));
-        topics.add(AppProperties.getString("kafka-logon-topic"));
 
         KafkaNotificationVerticle kafkaNotificationVerticle = new KafkaNotificationVerticle(config,
                 topics,
+                AppProperties.getString("kafka-logon-topic"),
                 AppProperties.getString("zookeeper.servers"));
 
         vertx.deployVerticle(kafkaNotificationVerticle);
