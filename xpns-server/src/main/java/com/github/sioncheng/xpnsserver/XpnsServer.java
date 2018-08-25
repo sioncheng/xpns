@@ -25,6 +25,7 @@ import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
@@ -455,6 +456,8 @@ public class XpnsServer implements ClientChannelEventListener {
             sessionInfo.setAcid(jsonCommand.getAcid());
             sessionInfo.setServer(this.serverConfig.getApiServer());
             sessionInfo.setPort(this.serverConfig.getApiPort());
+            sessionInfo.setType(SessionInfo.Type.LOGON);
+            sessionInfo.setTimestamp(new Date().getTime());
             this.sessionManager.putClient(sessionInfo);
             this.clientChannels.put(jsonCommand.getAcid(), clientChannel);
 

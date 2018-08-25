@@ -15,6 +15,7 @@ import io.vertx.core.Handler;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.eventbus.Message;
 import io.vertx.core.http.HttpClient;
+import io.vertx.core.http.HttpClientRequest;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.logging.Logger;
@@ -59,8 +60,6 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
     public void start() throws Exception {
 
         //startConsumer();
-
-        this.httpClient = vertx.createHttpClient();
 
         if ("hbase".equalsIgnoreCase(AppProperties.getString("store.type"))) {
             initHbase();
@@ -138,10 +137,12 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
                 vertx.eventBus().send(this.xpnsServicesEventAddress,
                         JSON.toJSONString(services.toArray(new String[]{})));
             } catch (Exception ex) {
+                logger.warn("zookeeper process error", ex);
 
-                vertx.setTimer(1000, new Handler<Long>() {
+                vertx.setTimer(10000, new Handler<Long>() {
                     @Override
-                    public void handle(Long event) {
+                    public void handle(Long timerId) {
+                        vertx.cancelTimer(timerId);
                         process(new WatchedEvent(Event.EventType.NodeChildrenChanged, null, null));
                     }
                 });
@@ -299,6 +300,18 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
             logger.warn(String.format("unable to parse session info %s", record.value()));
             return;
         }
+
+        if (sessionInfo.getType() == null) {
+            return;
+        }
+
+        if (sessionInfo.getType() == SessionInfo.Type.LOGON) {
+            if ((new Date()).getTime() - sessionInfo.getTimestamp() > 120000) {
+                logger.warn(String.format("skipped logon info %s", record.value()));
+                return;
+            }
+        }
+
 
         vertx.executeBlocking(future -> {
                     Exception ex = mayResendNotification(sessionInfo);
@@ -496,25 +509,30 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
             String service = this.services.get(rand.nextInt(this.services.size()));
 
             String[] hostPort = service.trim().split(":");
-            httpClient.post(Integer.parseInt(hostPort[1]), hostPort[0], "/client")
-                    .putHeader("Content-Type", "application/json;charset=UTF-8")
-                    .putHeader("Content-Length", String.valueOf(requestData.length))
-                    .handler(response -> {
-                        response.bodyHandler(responseBuffer -> {
-                           String s = new String(responseBuffer.getBytes());
-                           JSONObject responseObject = JSONObject.parseObject(s);
-                           if ("ok".equals(responseObject.getString("result"))) {
-                               JSONObject sessionInfo = responseObject.getJSONObject("sessionInfo");
-                               this.doRealSend(sessionInfo, entity, record);
-                           } else {
-                               offlineNotificationEntity(entity, record);
-                           }
-                        });
-                    })
-                    .exceptionHandler(t -> {
-                        logger.warn(String.format("connect to %s error", service), t);
-                    })
-                    .write(Buffer.buffer(requestData)).end();
+            HttpClient httpClient = vertx.createHttpClient();
+            HttpClientRequest request = httpClient.post(Integer.parseInt(hostPort[1]), hostPort[0], "/client");
+
+            request.putHeader("Content-Type", "application/json;charset=UTF-8")
+            .putHeader("Content-Length", String.valueOf(requestData.length))
+            .handler(response -> {
+                response.bodyHandler(responseBuffer -> {
+                   String s = new String(responseBuffer.getBytes());
+                   httpClient.close();
+
+                   JSONObject responseObject = JSONObject.parseObject(s);
+                   if ("ok".equals(responseObject.getString("result"))) {
+                       JSONObject sessionInfo = responseObject.getJSONObject("sessionInfo");
+                       this.doRealSend(sessionInfo, entity, record);
+                   } else {
+                       offlineNotificationEntity(entity, record);
+                   }
+                });
+            })
+            .exceptionHandler(t -> {
+                logger.warn(String.format("connect to %s error", service), t);
+                httpClient.close();
+            })
+            .write(Buffer.buffer(requestData)).end();
 
         } catch (Exception ex) {
             String message = String.format("send notification error %s",
@@ -543,6 +561,8 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
                     .exceptionHandler(t -> {
                         logger.warn(String.format("doRealSend error %s", t.getMessage()));
 
+                        httpClient.close();
+
                         offlineNotificationEntity(entity, record);
                     })
                     .handler(response -> response.bodyHandler(responseBody -> {
@@ -550,6 +570,7 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
                         if (logger.isInfoEnabled()) {
                             logger.info(s);
                         }
+                        httpClient.close();
 
                         kafkaConsumer4Notification.commit(generateCommitOffset(record));
 
@@ -761,12 +782,14 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
                     .putHeader("Content-Length", String.valueOf(requestData.length))
                     .exceptionHandler(t -> {
                         logger.warn("resendNotification error " + t.getMessage());
+                        httpClient.close();
                     })
                     .handler(response -> response.bodyHandler(responseBody -> {
                         String s = new String(responseBody.getBytes());
                         if (logger.isInfoEnabled()) {
                             logger.info(s);
                         }
+                        httpClient.close();
 
                         NotificationEntity entityEs = offlineEntity.clone();
                         entityEs.setStatus(NotificationEntity.RESEND);
@@ -791,8 +814,6 @@ public class KafkaNotificationVerticle extends AbstractVerticle implements Watch
     private KafkaConsumer<String, String> kafkaConsumer4Notification;
     private int consumingCounter = 0;
     private KafkaConsumer<String, String> kafkaConsumer4Logon;
-
-    private HttpClient httpClient;
 
     private Connection connection;
 

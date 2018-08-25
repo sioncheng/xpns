@@ -47,11 +47,9 @@ public class MainApp {
 
         xpnsServer.start();
 
-        new ScheduledThreadPoolExecutor(1).scheduleAtFixedRate(new Runnable() {
-            @Override
-            public void run() {
-                System.out.println("...");
-            }
-        }, 60, 60, TimeUnit.SECONDS);
+        int r = System.in.read();
+        while (r != (int)'q') {
+            r = System.in.read();
+        }
     }
 }
