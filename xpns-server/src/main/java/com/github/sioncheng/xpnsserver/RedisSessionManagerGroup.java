@@ -5,12 +5,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 public class RedisSessionManagerGroup implements SessionManager {
 
-    public RedisSessionManagerGroup(int instances, String host, int port) {
+    public RedisSessionManagerGroup(int instances, String host, int port,
+                                    int clientsMaxTotal, int clientsMaxIdle) {
         this.stop = false;
         this.putClientQueues = new ArrayList<>(instances);
         this.redisSessionManagers = new ArrayList<>(instances);
@@ -18,7 +21,7 @@ public class RedisSessionManagerGroup implements SessionManager {
 
         for (int i = 0 ; i < instances; i++) {
             this.putClientQueues.add(new ConcurrentLinkedQueue<>());
-            this.redisSessionManagers.add(new RedisSessionManager(host, port));
+            this.redisSessionManagers.add(new RedisSessionManager(host, port, clientsMaxTotal, clientsMaxIdle));
             final int n = i;
             Thread t = new Thread(new Runnable() {
                 @Override
@@ -47,6 +50,18 @@ public class RedisSessionManagerGroup implements SessionManager {
         this.putClientQueues.get(hashAcid(acid)).add(sessionInfo);
     }
 
+    public void putClients(List<SessionInfo> sessionInfoList) {
+        if (logger.isInfoEnabled()) {
+            logger.info(String.format("put clients %d", sessionInfoList.size()));
+        }
+
+        for (SessionInfo sessionInfo :
+                sessionInfoList) {
+            this.putClient(sessionInfo);
+        }
+
+    }
+
     public void removeClient(String acid, String server) {
         getRedisSessionManager(acid).removeClient(acid, server);
     }
@@ -56,18 +71,32 @@ public class RedisSessionManagerGroup implements SessionManager {
     }
 
     private void threadWork(int n) {
+        List<SessionInfo> sessionInfoList = new ArrayList<>();
         while (!stop) {
+
             SessionInfo sessionInfo = this.putClientQueues.get(n).poll();
-            if (sessionInfo == null) {
-                try {
-                    Thread.sleep(10);
-                } catch (Exception ex) { }
+
+            if (sessionInfo != null) {
+                sessionInfoList.add(sessionInfo);
+            }
+
+            if (sessionInfoList.size() >= 100 ||
+                    (sessionInfo == null && sessionInfoList.size() > 0)) {
+
+                this.getRedisSessionManager(sessionInfoList.get(0).getAcid())
+                        .putClients(sessionInfoList);
+
+                sessionInfoList = new ArrayList<>();
 
                 continue;
             }
 
-            this.getRedisSessionManager(sessionInfo.getAcid())
-                    .putClient(sessionInfo);
+            if (sessionInfo == null && sessionInfoList.size() == 0) {
+                try {
+                    Thread.sleep(100);
+                } catch (Exception ex) {}
+            }
+
         }
     }
 

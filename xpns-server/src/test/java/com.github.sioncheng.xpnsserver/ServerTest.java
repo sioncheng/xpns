@@ -207,7 +207,7 @@ public class ServerTest {
 
     private SessionManager createSessionManager() {
 
-        RedisSessionManager redisSessionManager = new RedisSessionManager("localhost", 6379);
+        RedisSessionManager redisSessionManager = new RedisSessionManager("localhost", 6379,4,4);
 
         return redisSessionManager;
     }

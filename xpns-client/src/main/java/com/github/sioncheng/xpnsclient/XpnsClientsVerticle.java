@@ -75,7 +75,10 @@ public class XpnsClientsVerticle extends AbstractVerticle {
                             logger.info(String.format("undepoy xpns client verticle %s %s %s"
                                     , Boolean.toString(result.succeeded()), acid, verticleId));
                         }
+
+                        recreateClient(acid);
                     });
+
                 } else {
                     logger.warn(String.format("cant find deployed client verticle for %s", acid));
                 }
@@ -107,21 +110,7 @@ public class XpnsClientsVerticle extends AbstractVerticle {
 
                     String clientId = generateClientId(connected);
 
-                    XpnsClientVerticle clientVerticle =
-                            new XpnsClientVerticle(clientId,
-                                    netSocketAsyncResult.result(),
-                                    clientActivationEventAddress);
-
-                    vertx.deployVerticle(clientVerticle, deployResult -> {
-                        if (deployResult.succeeded()) {
-                            ClientDeploymentEvent event =
-                                    new ClientDeploymentEvent(clientId, deployResult.result());
-                            vertx.eventBus().send(clientDeploymentEventAddress, JSON.toJSONString(event));
-                        } else {
-                            ///
-                            logger.warn(String.format("deploy xpns client verticle failure %s", clientId));
-                        }
-                    });
+                    deployClientVerticle(clientId, netSocketAsyncResult.result());
                 } else {
                     //
                     logger.warn("connect to remote failure");
@@ -153,6 +142,45 @@ public class XpnsClientsVerticle extends AbstractVerticle {
         sb.append(sn);
 
         return sb.toString();
+    }
+
+    private void recreateClient(final String clientId) {
+        NetClient netClient = vertx.createNetClient();
+        netClient.connect(this.remotePort, this.remoteHost, new Handler<AsyncResult<NetSocket>>() {
+            @Override
+            public void handle(AsyncResult<NetSocket> netSocketAsyncResult) {
+                if (netSocketAsyncResult.succeeded()) {
+                    if (logger.isInfoEnabled()) {
+                        logger.info("connect to remote while recreate " + clientId);
+                    }
+
+                    connected++;
+
+                    deployClientVerticle(clientId, netSocketAsyncResult.result());
+                } else {
+                    //
+                    logger.warn("connect to remote failure while recreate " + clientId);
+                }
+            }
+        });
+    }
+
+    private void deployClientVerticle(String clientId, NetSocket netSocket) {
+        XpnsClientVerticle clientVerticle =
+                new XpnsClientVerticle(clientId,
+                        netSocket,
+                        clientActivationEventAddress);
+
+        vertx.deployVerticle(clientVerticle, deployResult -> {
+            if (deployResult.succeeded()) {
+                ClientDeploymentEvent event =
+                        new ClientDeploymentEvent(clientId, deployResult.result());
+                vertx.eventBus().send(clientDeploymentEventAddress, JSON.toJSONString(event));
+            } else {
+                ///
+                logger.warn(String.format("deploy xpns client verticle failure %s", clientId));
+            }
+        });
     }
 
     private int appId;

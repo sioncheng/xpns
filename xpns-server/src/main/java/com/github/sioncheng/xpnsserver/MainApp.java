@@ -17,7 +17,9 @@ public class MainApp {
 
         RedisSessionManagerGroup redisSessionManager = new RedisSessionManagerGroup(AppProperties.getInt("server.worker.threads"),
                 AppProperties.getString("redis.host"),
-                AppProperties.getInt("redis.port"));
+                AppProperties.getInt("redis.port"),
+                AppProperties.getInt("redis.clients.max.total"),
+                AppProperties.getInt("redis.clients.max.idle"));
 
         Map<String, String> kafkaProducerConfig = AppProperties.getPropertiesWithPrefix("kafka.producer.");
         Properties properties = new Properties();

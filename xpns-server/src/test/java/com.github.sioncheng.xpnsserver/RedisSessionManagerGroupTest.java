@@ -9,7 +9,7 @@ public class RedisSessionManagerGroupTest {
     @Test
     public void testPutGetRemove() throws Exception{
         RedisSessionManagerGroup redisSessionManagerGroup =
-                new RedisSessionManagerGroup(2, "localhost", 6379);
+                new RedisSessionManagerGroup(2, "localhost", 6379,4,4);
 
         String acid = "32000001";
         String localhost = "localhost";

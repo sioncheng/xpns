@@ -8,7 +8,7 @@ public class RedisSessionManagerTest {
 
     @Test
     public void testPutGetRemove() {
-        RedisSessionManager redisSessionManager = new RedisSessionManager("localhost", 6379);
+        RedisSessionManager redisSessionManager = new RedisSessionManager("localhost", 6379,4,4);
 
         SessionInfo sessionInfo = new SessionInfo();
         sessionInfo.setAcid("32000001");
