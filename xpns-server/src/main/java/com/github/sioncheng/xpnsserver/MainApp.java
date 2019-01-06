@@ -47,11 +47,10 @@ public class MainApp {
                 kafkaNotificationManager,
                 AppProperties.getString("zookeeper.servers"));
 
-        xpnsServer.start();
 
-        int r = System.in.read();
-        while (r != (int)'q') {
-            r = System.in.read();
-        }
+
+        xpnsServer.start().await();
+
+
     }
 }

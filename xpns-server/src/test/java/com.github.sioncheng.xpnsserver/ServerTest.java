@@ -6,6 +6,7 @@ import com.github.sioncheng.xpns.common.client.Notification;
 import com.github.sioncheng.xpns.common.client.SessionInfo;
 import com.github.sioncheng.xpns.common.protocol.Command;
 import com.github.sioncheng.xpns.common.protocol.JsonCommand;
+import io.netty.channel.ChannelFuture;
 import okhttp3.*;
 import org.junit.Assert;
 import org.junit.Test;
@@ -29,8 +30,8 @@ public class ServerTest {
                 sessionManager,
                 this.createNotificationManager(),
                 "localhost:2181");
-        boolean result = xpnsServer.start();
-        Assert.assertTrue(result);
+        ChannelFuture result = xpnsServer.start();
+        Assert.assertNotNull(result);
 
         Socket socket = new Socket();
         socket.connect(new InetSocketAddress(8080));

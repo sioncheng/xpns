@@ -8,6 +8,7 @@ import com.github.sioncheng.xpns.common.storage.NotificationEntity;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.HttpClient;
+import io.vertx.core.http.HttpClientRequest;
 import io.vertx.core.logging.Logger;
 import io.vertx.core.logging.LoggerFactory;
 import io.vertx.kafka.client.common.TopicPartition;
@@ -19,6 +20,8 @@ import org.apache.commons.lang3.time.DateFormatUtils;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
+
+import static io.vertx.core.impl.VertxImpl.context;
 
 public class ElasticsearchVerticle extends AbstractVerticle {
 
@@ -63,16 +66,22 @@ public class ElasticsearchVerticle extends AbstractVerticle {
     private void index(NotificationEntity entity,
                        KafkaConsumerRecord<String, String> record) {
         /*
-        * elasticsearch index api
-        * PUT twitter/_doc/1
+        * POST /xpns/_doc
             {
-                "user" : "kimchy",
-                "post_date" : "2009-11-15T14:12:12",
-                "message" : "trying out Elasticsearch"
+              "acid":"32000000000000000001",
+              "to":"42000000000000000001",
+              "title":"hello",
+              "body":"where are you",
+              "ext":"{}",
+              "uniqId":"ece4f4a60b764339b94a07c84e338a27",
+              "createDateTime":"2018-12-12T13:55:00+08:00",
+              "ttl":3600,
+              "status":1,
+              "statusDateTime":"2018-12-12T13:55:00+08:00"
             }
         * */
 
-        final String path = "/xpns/notification";
+        final String path = "/xpns/_doc";
         JSONObject doc = new JSONObject();
         doc.put("acid", entity.getNotification().getTo());
         doc.put("to", entity.getNotification().getTo());
@@ -85,33 +94,42 @@ public class ElasticsearchVerticle extends AbstractVerticle {
         doc.put("status", entity.getStatus());
         doc.put("statusDateTime", entity.getStatusDateTime());
 
+
+
+        byte[] postData = null;
         try {
-            byte[] postData = doc.toJSONString().getBytes("UTF-8");
-            httpClient.postAbs(AppProperties.getString("elasticsearch.url") +  path)
-                    .exceptionHandler(t -> {
-                        logger.warn("post entity to es index error", t);
-                    })
-                    .handler(response -> {
-                        response.bodyHandler(responseBuffer -> {
-
-                            String responseBody = new String(responseBuffer.getBytes());
-                            if (logger.isInfoEnabled()) {
-                                logger.info(responseBody);
-                            }
-
-                            JSONObject esResponseObject = JSON.parseObject(responseBody);
-                            if ("created".equals(esResponseObject.getString("result"))) {
-                                commit(record);
-                            }
-                        });
-                    })
-                    .putHeader("Content-Type", "application/json;charset=UTF-8")
-                    .putHeader("Content-Length", String.valueOf(postData.length))
-                    .write(Buffer.buffer(postData))
-                    .end();
+            postData = doc.toJSONString().getBytes("UTF-8");
         } catch (Exception ex) {
-            logger.warn("index entity error", ex);
+            logger.error("index error", ex);
+            return;
         }
+        final HttpClientRequest request = httpClient.postAbs(AppProperties.getString("elasticsearch.url") +  path);
+        request.exceptionHandler(t -> {
+            logger.warn("post entity to es index error", t);
+        });
+        request.handler(response -> {
+            response.exceptionHandler(ex->{
+                logger.error("response error", ex);
+            });
+            response.endHandler((Void)->{
+                logger.info("response end");
+            });
+            response.bodyHandler(responseBuffer -> {
+                String responseBody = new String(responseBuffer.getBytes());
+                if (logger.isInfoEnabled()) {
+                    logger.info(responseBody);
+                }
+
+                JSONObject esResponseObject = JSON.parseObject(responseBody);
+                if ("created".equals(esResponseObject.getString("result"))) {
+                    commit(record);
+                }
+            });
+        });
+        request.putHeader("Content-Type", "application/json;charset=UTF-8")
+                .putHeader("Content-Length", String.valueOf(postData.length))
+                .end(Buffer.buffer(postData));
+
 
     }
 

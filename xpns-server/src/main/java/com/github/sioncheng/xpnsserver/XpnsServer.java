@@ -8,6 +8,7 @@ import com.github.sioncheng.xpns.common.protocol.Command;
 import com.github.sioncheng.xpns.common.protocol.JsonCommand;
 import com.github.sioncheng.xpns.common.zk.Directories;
 import io.netty.bootstrap.ServerBootstrap;
+import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.nio.NioEventLoopGroup;
@@ -45,17 +46,14 @@ public class XpnsServer implements ClientChannelEventListener {
         this.stop = false;
     }
 
-    public boolean start() throws Exception {
-
-        startClientServer();
-
+    public ChannelFuture start() throws Exception {
         startApiServer();
 
         startWorkerThreads();
 
         registerToZk();
 
-        return true;
+        return startClientServer();
     }
 
     public void stop() {
@@ -134,7 +132,7 @@ public class XpnsServer implements ClientChannelEventListener {
         return this.sessionManager.getClient(acid);
     }
 
-    private void startClientServer() throws InterruptedException {
+    private ChannelFuture startClientServer() throws InterruptedException {
         eventLoopGroupMaster = new NioEventLoopGroup(1);
         eventLoopGroup = new NioEventLoopGroup(this.serverConfig.getNettyEventLoopGroupThreadsForClient());
         serverBootstrap = new ServerBootstrap();
@@ -144,11 +142,13 @@ public class XpnsServer implements ClientChannelEventListener {
         serverBootstrap.channel(NioServerSocketChannel.class);
         serverBootstrap.childHandler(new ClientChannelInitializer(this));
 
-        serverBootstrap.bind(this.serverConfig.getClientPort()).sync();
+        ChannelFuture channelFuture = serverBootstrap.bind(this.serverConfig.getClientPort()).sync();
 
         if (logger.isInfoEnabled()) {
             logger.info("start client server at {}", this.serverConfig.getClientPort());
         }
+
+        return channelFuture;
     }
 
     private void startApiServer() throws InterruptedException {
