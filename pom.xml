@@ -23,6 +23,7 @@
         <module>xpns-es</module>
         <module>xpns-server-akka</module>
         <module>xpns-bench-soa</module>
+        <module>netty-explore</module>
     </modules>
 
     <properties>
