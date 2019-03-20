@@ -53,6 +53,7 @@ public class XpnsClientsVerticle extends AbstractVerticle {
 
         switch (event.getEventType()) {
             case ClientActivationEvent.LOGON_EVENT:
+                connected++;
                 if (logger.isInfoEnabled()) {
                     logger.info(String.format("logon event %s", event.getAcid()));
                 }
@@ -63,6 +64,7 @@ public class XpnsClientsVerticle extends AbstractVerticle {
                 }
                 break;
             case ClientActivationEvent.CLOSE_EVENT:
+                connected--;
                 String acid = event.getAcid();
                 if (logger.isInfoEnabled()) {
                     logger.info(String.format("close event %s", acid));
@@ -76,7 +78,14 @@ public class XpnsClientsVerticle extends AbstractVerticle {
                                     , Boolean.toString(result.succeeded()), acid, verticleId));
                         }
 
-                        recreateClient(acid);
+                        vertx.setTimer(5000 + System.currentTimeMillis() % 2000, new Handler<Long>() {
+                            @Override
+                            public void handle(Long tid) {
+                                recreateClient(acid);
+                                vertx.cancelTimer(tid);
+                            }
+                        });
+
                     });
 
                 } else {
@@ -97,32 +106,27 @@ public class XpnsClientsVerticle extends AbstractVerticle {
     }
 
     private void startConnections() {
-        NetClient netClient = vertx.createNetClient();
-        netClient.connect(this.remotePort, this.remoteHost, new Handler<AsyncResult<NetSocket>>() {
-            @Override
-            public void handle(AsyncResult<NetSocket> netSocketAsyncResult) {
-                if (netSocketAsyncResult.succeeded()) {
-                    if (logger.isInfoEnabled()) {
-                        logger.info("connect to remote");
+        for (int i = 0 ; i < clients; i++) {
+            final int n = fromId + i;
+            NetClient netClient = vertx.createNetClient();
+            netClient.connect(this.remotePort, this.remoteHost, new Handler<AsyncResult<NetSocket>>() {
+                @Override
+                public void handle(AsyncResult<NetSocket> netSocketAsyncResult) {
+                    if (netSocketAsyncResult.succeeded()) {
+                        if (logger.isInfoEnabled()) {
+                            logger.info("connect to remote");
+                        }
+
+                        String clientId = generateClientId(n);
+
+                        deployClientVerticle(clientId, netSocketAsyncResult.result());
+                    } else {
+                        //
+                        logger.warn("connect to remote failure");
                     }
-
-                    connected++;
-
-                    String clientId = generateClientId(connected);
-
-                    deployClientVerticle(clientId, netSocketAsyncResult.result());
-                } else {
-                    //
-                    logger.warn("connect to remote failure");
                 }
-
-                if (connected < clients) {
-                    startConnections();
-                } else {
-                    logger.info(String.format("reach the max clients %d", clients));
-                }
-            }
-        });
+            });
+        }
     }
 
     private String generateClientId(int n) {
@@ -153,8 +157,6 @@ public class XpnsClientsVerticle extends AbstractVerticle {
                     if (logger.isInfoEnabled()) {
                         logger.info("connect to remote while recreate " + clientId);
                     }
-
-                    connected++;
 
                     deployClientVerticle(clientId, netSocketAsyncResult.result());
                 } else {

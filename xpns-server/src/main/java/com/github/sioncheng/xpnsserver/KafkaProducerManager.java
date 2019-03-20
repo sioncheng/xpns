@@ -3,7 +3,9 @@ package com.github.sioncheng.xpnsserver;
 import com.alibaba.fastjson.JSON;
 import com.github.sioncheng.xpns.common.client.Notification;
 import com.github.sioncheng.xpns.common.client.SessionInfo;
+import com.github.sioncheng.xpns.common.date.DateFormatPatterns;
 import com.github.sioncheng.xpns.common.storage.NotificationEntity;
+import org.apache.commons.lang3.time.DateFormatUtils;
 import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -11,6 +13,7 @@ import org.apache.kafka.clients.producer.RecordMetadata;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Date;
 import java.util.Properties;
 
 public class KafkaProducerManager {
@@ -33,6 +36,9 @@ public class KafkaProducerManager {
         } else {
             notificationEntity.setStatus(NotificationEntity.UNDELIVER);
         }
+        notificationEntity.setStatusDateTime(DateFormatUtils.format(new Date(), DateFormatPatterns.ISO8601_WITH_MS));
+        notificationEntity.setCreateDateTime(notificationEntity.getStatusDateTime());
+        notificationEntity.setTtl(0);
 
         final String value = JSON.toJSONString(notificationEntity);
         ProducerRecord<String, String> producerRecord = new ProducerRecord<>(this.ackTopic, notification.getTo(), value);

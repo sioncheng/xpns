@@ -66,7 +66,7 @@ public class ElasticsearchVerticle extends AbstractVerticle {
     private void index(NotificationEntity entity,
                        KafkaConsumerRecord<String, String> record) {
         /*
-        * POST /xpns/_doc
+        * POST /notification/trace
             {
               "acid":"32000000000000000001",
               "to":"42000000000000000001",
@@ -81,7 +81,7 @@ public class ElasticsearchVerticle extends AbstractVerticle {
             }
         * */
 
-        final String path = "/xpns/_doc";
+        final String path = "/notification/trace";
         JSONObject doc = new JSONObject();
         doc.put("acid", entity.getNotification().getTo());
         doc.put("to", entity.getNotification().getTo());

@@ -291,8 +291,9 @@ public class ClientServer extends AbstractVerticle {
         notificationEntity.setTtl(0);
         notificationEntity.setNotification(notification);
         notificationEntity.setStatus(NotificationEntity.DELIVERED);
-        notificationEntity.setCreateDateTime(DateFormatUtils.format(new Date(), DateFormatPatterns.ISO8601_WITH_MS));
-
+        notificationEntity.setStatusDateTime(DateFormatUtils.format(new Date(), DateFormatPatterns.ISO8601_WITH_MS));
+        notificationEntity.setCreateDateTime(notificationEntity.getStatusDateTime());
+        
         KafkaProducerRecord<String, String> kafkaProducerRecord =
                 new KafkaProducerRecordImpl<>(this.notificationAckTopic,
                         notification.getTo(),

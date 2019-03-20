@@ -29,7 +29,9 @@ public class XpnsClientVerticle extends AbstractVerticle {
 
     @Override
     public void start() {
-        //super.start();
+        try {
+            super.start();
+        } catch (Exception ex) {}
 
         netSocket.handler(this::socketHandler);
         netSocket.closeHandler(this::socketCloseHandler);
@@ -40,8 +42,8 @@ public class XpnsClientVerticle extends AbstractVerticle {
 
     @Override
     public void stop() throws Exception {
-        if (!vertx.cancelTimer(this.heatBeatTimerId)) {
-            logger.warn("unable to cancel timer %d of %s", this.heatBeatTimerId, this.clientId);
+        if (this.heatBeatTimerId != 0 && !vertx.cancelTimer(this.heatBeatTimerId)) {
+            logger.warn(String.format("unable to cancel timer %d of %s", this.heatBeatTimerId, this.clientId));
         }
 
 
@@ -82,6 +84,7 @@ public class XpnsClientVerticle extends AbstractVerticle {
                         logger.info(String.format("logon %s", clientId));
                     }
                     this.status = LOGON;
+                    this.logonTime = System.currentTimeMillis();
 
                     ClientActivationEvent logonEvent = new ClientActivationEvent(clientId, ClientActivationEvent.LOGON_EVENT);
                     vertx.eventBus().send(clientActivationEventAddress, JSON.toJSONString(logonEvent));
@@ -127,6 +130,11 @@ public class XpnsClientVerticle extends AbstractVerticle {
             netSocket.close();
             return;
         }
+        if (System.currentTimeMillis() - this.logonTime > 20 * 60 * 1000) {
+            netSocket.close();
+            logger.info("close client to re-connect");
+            return;
+        }
         if (System.currentTimeMillis() - lastReadWriteTime >= l) {
             JSONObject jsonObject = new JSONObject();
             jsonObject.put(JsonCommand.ACID, this.clientId);
@@ -166,6 +174,7 @@ public class XpnsClientVerticle extends AbstractVerticle {
     private CommandCodec commandCodec;
     private long heatBeatTimerId;
     private String clientActivationEventAddress;
+    private long logonTime;
 
     private static final int NEW = 0;
     private static final int LOGON = 1;

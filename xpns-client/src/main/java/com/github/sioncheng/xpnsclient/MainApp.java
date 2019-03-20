@@ -30,28 +30,25 @@ public class MainApp {
         Vertx vertx = Vertx.vertx(vertxOptions);
 
         int batch = commandArguments.getClientsNumber() / commandArguments.getThreads();
+
         int startId = 1;
-        for (int i = 0 ; i < commandArguments.getThreads() - 1; i++) {
+        for (int i = 0 ; i < commandArguments.getThreads(); i++) {
+            int sid = startId;
+            int tid = startId + batch;
+            if (i == commandArguments.getThreads() - 1) {
+                sid = startId;
+                tid = commandArguments.getClientsNumber();
+            }
 
             vertx.deployVerticle(new XpnsClientsVerticle(commandArguments.getAppId(),
-                    startId,
-                    startId + batch,
+                    sid,
+                    tid,
                     commandArguments.getPrefixChar(),
-                    batch,
+                    tid - sid + 1,
                     commandArguments.getTargetHost(),
                     commandArguments.getTargetPort()));
 
             startId = startId + batch;
-        }
-
-        if (startId <= commandArguments.getClientsNumber()) {
-            vertx.deployVerticle(new XpnsClientsVerticle(commandArguments.getAppId(),
-                    startId,
-                    commandArguments.getClientsNumber(),
-                    commandArguments.getPrefixChar(),
-                    commandArguments.getClientsNumber() - startId + 1,
-                    commandArguments.getTargetHost(),
-                    commandArguments.getTargetPort()));
         }
 
         System.in.read();

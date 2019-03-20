@@ -184,7 +184,7 @@ public class ServerActor extends AbstractActor {
                 NotificationEntity notificationEntity = new NotificationEntity();
                 notificationEntity.setStatus(NotificationEntity.DELIVERED);
                 notificationEntity.setStatusDateTime(DateFormatUtils.format(new Date(), DateFormatPatterns.ISO8601_WITH_MS));
-                notificationEntity.setCreateDateTime(DateFormatUtils.format(new Date(), DateFormatPatterns.ISO8601_WITH_MS));
+                notificationEntity.setCreateDateTime(notificationEntity.getStatusDateTime());
                 notificationEntity.setTtl(0);
                 notificationEntity.setNotification(notification);
 
