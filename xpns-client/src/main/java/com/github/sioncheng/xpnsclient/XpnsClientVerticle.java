@@ -23,7 +23,7 @@ public class XpnsClientVerticle extends AbstractVerticle {
         this.clientId = clientId;
         this.netSocket = netSocket;
         this.lastReadWriteTime = 0;
-        this.heatBeatTimerId = 0L;
+        this.heartBeatTimerId = -1;
         this.clientActivationEventAddress = clientActivationEventAddress;
     }
 
@@ -42,8 +42,10 @@ public class XpnsClientVerticle extends AbstractVerticle {
 
     @Override
     public void stop() throws Exception {
-        if (this.heatBeatTimerId != 0 && !vertx.cancelTimer(this.heatBeatTimerId)) {
-            logger.warn(String.format("unable to cancel timer %d of %s", this.heatBeatTimerId, this.clientId));
+        logger.info(String.format("stop %s %d", deploymentID(), this.heartBeatTimerId));
+
+        if (this.heartBeatTimerId != -1 && !vertx.cancelTimer(this.heartBeatTimerId)) {
+            logger.warn(String.format("unable to cancel timer %d of %s", this.heartBeatTimerId, this.clientId));
         }
 
 
@@ -67,6 +69,7 @@ public class XpnsClientVerticle extends AbstractVerticle {
     }
 
     private void socketHandler(Buffer buffer) {
+        lastReadWriteTime = System.currentTimeMillis();
         List<JsonCommand> jsonCommands = this.commandCodec.decode(buffer);
         if (jsonCommands.size() > 0) {
             processCommands(jsonCommands);
@@ -89,7 +92,8 @@ public class XpnsClientVerticle extends AbstractVerticle {
                     ClientActivationEvent logonEvent = new ClientActivationEvent(clientId, ClientActivationEvent.LOGON_EVENT);
                     vertx.eventBus().send(clientActivationEventAddress, JSON.toJSONString(logonEvent));
 
-                    this.heatBeatTimerId = vertx.setPeriodic(200000, this::handlePeriodic);
+                    this.heartBeatTimerId = vertx.setPeriodic(HEART_BEAT_INTERVAL / 2, this::handlePeriodic);
+                    logger.info(String.format("heartBeatTimerId %s", heartBeatTimerId));
                     break;
                 case JsonCommand.NOTIFICATION_CODE:
                     JSONObject jsonObject = jsonCommand.getCommandObject().getJSONObject(JsonCommand.NOTIFICATION);
@@ -130,12 +134,14 @@ public class XpnsClientVerticle extends AbstractVerticle {
             netSocket.close();
             return;
         }
-        if (System.currentTimeMillis() - this.logonTime > 20 * 60 * 1000) {
-            netSocket.close();
+        if (System.currentTimeMillis() - this.logonTime > 6 * HEART_BEAT_INTERVAL) {
             logger.info("close client to re-connect");
+            netSocket.close();
             return;
         }
-        if (System.currentTimeMillis() - lastReadWriteTime >= l) {
+        if (System.currentTimeMillis() - lastReadWriteTime >= HEART_BEAT_INTERVAL) {
+            logger.info("write heartbeat");
+
             JSONObject jsonObject = new JSONObject();
             jsonObject.put(JsonCommand.ACID, this.clientId);
             jsonObject.put(JsonCommand.COMMAND_CODE, JsonCommand.HEART_BEAT_CODE);
@@ -172,12 +178,14 @@ public class XpnsClientVerticle extends AbstractVerticle {
     private NetSocket netSocket;
     private long lastReadWriteTime;
     private CommandCodec commandCodec;
-    private long heatBeatTimerId;
+    private long heartBeatTimerId;
     private String clientActivationEventAddress;
     private long logonTime;
 
     private static final int NEW = 0;
     private static final int LOGON = 1;
+
+    private static final long HEART_BEAT_INTERVAL = 3 * 60 * 1000;
 
 
     private static Logger logger = LoggerFactory.getLogger(XpnsClientVerticle.class);

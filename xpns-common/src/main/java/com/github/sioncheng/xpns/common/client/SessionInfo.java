@@ -4,7 +4,7 @@ public class SessionInfo {
 
     public enum Type {
 
-        LOGON(1), QUERY(2);
+        LOGON(1), QUERY(2), HEART(3);
 
         private Type(int val) {
             this.val = val;

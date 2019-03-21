@@ -367,6 +367,9 @@ public class XpnsServer implements ClientChannelEventListener {
         sessionInfo.setAcid(jsonCommand.getAcid());
         sessionInfo.setServer(this.serverConfig.getApiServer());
         sessionInfo.setPort(this.serverConfig.getApiPort());
+        sessionInfo.setTimestamp(clientCommand.clientChannel.getLogonTime());
+        sessionInfo.setType(SessionInfo.Type.HEART);
+
         this.sessionManager.putClient(sessionInfo);
     }
 
@@ -452,12 +455,15 @@ public class XpnsServer implements ClientChannelEventListener {
                     payload);
             clientChannel.writeCommand(command);
 
+            clientChannel.setLogonTime(new Date().getTime());
+
             SessionInfo sessionInfo = new SessionInfo();
             sessionInfo.setAcid(jsonCommand.getAcid());
             sessionInfo.setServer(this.serverConfig.getApiServer());
             sessionInfo.setPort(this.serverConfig.getApiPort());
             sessionInfo.setType(SessionInfo.Type.LOGON);
-            sessionInfo.setTimestamp(new Date().getTime());
+            sessionInfo.setTimestamp(clientChannel.getLogonTime());
+
             this.sessionManager.putClient(sessionInfo);
             this.clientChannels.put(jsonCommand.getAcid(), clientChannel);
 

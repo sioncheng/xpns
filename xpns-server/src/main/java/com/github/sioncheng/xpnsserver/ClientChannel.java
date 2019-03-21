@@ -50,6 +50,14 @@ public class ClientChannel extends SimpleChannelInboundHandler<Command> {
         this.acid = acid;
     }
 
+    public void setLogonTime(long logonTime) {
+        this.logonTime = logonTime;
+    }
+
+    public long getLogonTime() {
+        return this.logonTime;
+    }
+
     @Override
     public void channelActive(ChannelHandlerContext ctx) {
 
@@ -126,6 +134,7 @@ public class ClientChannel extends SimpleChannelInboundHandler<Command> {
     private ChannelHandlerContext ctx;
     private volatile String acid;
     private volatile boolean publishInactive;
+    private volatile long logonTime;
 
     private static final Logger logger = LoggerFactory.getLogger(ClientChannel.class);
 }
