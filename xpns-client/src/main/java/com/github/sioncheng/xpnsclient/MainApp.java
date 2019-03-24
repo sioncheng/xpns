@@ -33,11 +33,14 @@ public class MainApp {
 
         int startId = 1;
         for (int i = 0 ; i < commandArguments.getThreads(); i++) {
-            int sid = startId;
-            int tid = startId + batch;
+            int sid;
+            int tid;
             if (i == commandArguments.getThreads() - 1) {
                 sid = startId;
                 tid = commandArguments.getClientsNumber();
+            } else {
+                sid = startId;
+                tid = startId + batch;
             }
 
             vertx.deployVerticle(new XpnsClientsVerticle(commandArguments.getAppId(),
@@ -48,7 +51,7 @@ public class MainApp {
                     commandArguments.getTargetHost(),
                     commandArguments.getTargetPort()));
 
-            startId = startId + batch;
+            startId = tid + 1;
         }
 
         System.in.read();

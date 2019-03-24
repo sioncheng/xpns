@@ -107,26 +107,35 @@ public class XpnsClientsVerticle extends AbstractVerticle {
 
     private void startConnections() {
         for (int i = 0 ; i < clients; i++) {
-            final int n = fromId + i;
-            NetClient netClient = vertx.createNetClient();
-            netClient.connect(this.remotePort, this.remoteHost, new Handler<AsyncResult<NetSocket>>() {
-                @Override
-                public void handle(AsyncResult<NetSocket> netSocketAsyncResult) {
-                    if (netSocketAsyncResult.succeeded()) {
-                        if (logger.isInfoEnabled()) {
-                            logger.info("connect to remote");
-                        }
-
-                        String clientId = generateClientId(n);
-
-                        deployClientVerticle(clientId, netSocketAsyncResult.result());
-                    } else {
-                        //
-                        logger.warn("connect to remote failure");
-                    }
-                }
-            });
+            startConnect(fromId + i);
         }
+    }
+
+    private void startConnect(final int n) {
+        NetClient netClient = vertx.createNetClient();
+        netClient.connect(this.remotePort, this.remoteHost, new Handler<AsyncResult<NetSocket>>() {
+            @Override
+            public void handle(AsyncResult<NetSocket> netSocketAsyncResult) {
+                if (netSocketAsyncResult.succeeded()) {
+                    if (logger.isInfoEnabled()) {
+                        logger.info("connect to remote");
+                    }
+
+                    String clientId = generateClientId(n);
+
+                    deployClientVerticle(clientId, netSocketAsyncResult.result());
+                } else {
+                    //
+                    logger.warn(String.format("connect to remote failure: %s", netSocketAsyncResult.cause().getMessage()));
+
+                    vertx.setTimer(10000 + System.currentTimeMillis() % 3000, tid -> {
+                        logger.info("restartConnect");
+                        vertx.cancelTimer(tid);
+                        startConnect(n);
+                    });
+                }
+            }
+        });
     }
 
     private String generateClientId(int n) {
