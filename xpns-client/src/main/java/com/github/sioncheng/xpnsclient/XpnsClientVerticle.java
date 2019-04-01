@@ -8,23 +8,24 @@ import com.github.sioncheng.xpns.common.protocol.JsonCommand;
 import com.github.sioncheng.xpns.common.vertx.CommandCodec;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.buffer.Buffer;
-import io.vertx.core.logging.Logger;
-import io.vertx.core.logging.LoggerFactory;
+import io.vertx.core.net.NetClient;
 import io.vertx.core.net.NetSocket;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.UnsupportedEncodingException;
 import java.util.List;
 
 public class XpnsClientVerticle extends AbstractVerticle {
 
-    public XpnsClientVerticle(String clientId, NetSocket netSocket, String clientActivationEventAddress) {
-        this.commandCodec = new CommandCodec();
-        this.status = NEW;
+    public XpnsClientVerticle(NetClient netClient, String remoteHost, int remotePort , String clientId, String clientActivationEventAddress) {
+        this.netClient = netClient;
+        this.remoteHost = remoteHost;
+        this.remotePort = remotePort;
         this.clientId = clientId;
-        this.netSocket = netSocket;
-        this.lastReadWriteTime = 0;
-        this.heartBeatTimerId = -1;
         this.clientActivationEventAddress = clientActivationEventAddress;
+
+        this.init();
     }
 
     @Override
@@ -33,19 +34,16 @@ public class XpnsClientVerticle extends AbstractVerticle {
             super.start();
         } catch (Exception ex) {}
 
-        netSocket.handler(this::socketHandler);
-        netSocket.closeHandler(this::socketCloseHandler);
-        netSocket.exceptionHandler(this::socketExceptionHandler);
+        connect();
 
-        login();
     }
 
     @Override
     public void stop() throws Exception {
-        logger.info(String.format("stop %s %d", deploymentID(), this.heartBeatTimerId));
+        logger.info(String.format("stop %s %d %s", deploymentID(), this.heartBeatTimerId, clientId));
 
         if (this.heartBeatTimerId != -1 && !vertx.cancelTimer(this.heartBeatTimerId)) {
-            logger.warn(String.format("unable to cancel timer %d of %s", this.heartBeatTimerId, this.clientId));
+            logger.warn(String.format("unable to cancel timer %d of %s during stop", this.heartBeatTimerId, this.clientId));
         }
 
 
@@ -56,14 +54,61 @@ public class XpnsClientVerticle extends AbstractVerticle {
         super.stop();
     }
 
+    private void init() {
+        this.commandCodec = new CommandCodec();
+        this.status = NEW;
+        this.netSocket = null;
+        this.lastReadWriteTime = 0;
+        this.heartBeatTimerId = -1;
+    }
+
+    private void connect() {
+        netClient.connect(remotePort, remoteHost, "xpns-server", netSocketAsyncResult -> {
+            if (netSocketAsyncResult.succeeded()) {
+                logger.info("{} connect to {}:{}", clientId, remoteHost, remotePort);
+                netSocket = netSocketAsyncResult.result();
+                netSocket.handler(this::socketHandler);
+                netSocket.closeHandler(this::socketCloseHandler);
+                netSocket.exceptionHandler(this::socketExceptionHandler);
+
+
+                login();
+            } else {
+                logger.warn("{} connect to {}:{} failed {}", clientId, remoteHost, remotePort, netSocketAsyncResult.cause());
+
+                vertx.setTimer(3000 + System.currentTimeMillis() % 1000, l -> {
+                   vertx.cancelTimer(l);
+                   connect();
+                });
+            }
+        });
+    }
+
     private void socketCloseHandler(Void v) {
-        logger.warn("socket closed");
+        logger.warn("{} socket closed", clientId);
         ClientActivationEvent event = new ClientActivationEvent(clientId, ClientActivationEvent.CLOSE_EVENT);
         vertx.eventBus().send(clientActivationEventAddress, JSON.toJSONString(event));
+
+        this.netSocket = null;
+        this.lastReadWriteTime = System.currentTimeMillis();
+        this.status = CLOSE;
+
+        vertx.setTimer(5000 + System.currentTimeMillis() % 1000, l -> {
+            logger.info("{} re-connect", clientId);
+            vertx.cancelTimer(l);
+
+            if (this.heartBeatTimerId != -1 && !vertx.cancelTimer(this.heartBeatTimerId)) {
+                logger.warn(String.format("unable to cancel timer %d of %s during re-connect", this.heartBeatTimerId, this.clientId));
+            }
+
+            this.init();
+
+            connect();
+        });
     }
 
     private void socketExceptionHandler(Throwable t) {
-        logger.warn("socket exception", t);
+        logger.warn("{} socket exception {}", clientId, t);
         ClientActivationEvent event = new ClientActivationEvent(clientId, ClientActivationEvent.CLOSE_EVENT);
         vertx.eventBus().send(clientActivationEventAddress, JSON.toJSONString(event));
     }
@@ -93,7 +138,7 @@ public class XpnsClientVerticle extends AbstractVerticle {
                     vertx.eventBus().send(clientActivationEventAddress, JSON.toJSONString(logonEvent));
 
                     this.heartBeatTimerId = vertx.setPeriodic(HEART_BEAT_INTERVAL / 2, this::handlePeriodic);
-                    logger.info(String.format("heartBeatTimerId %s", heartBeatTimerId));
+                    logger.info(String.format("%s heartBeatTimerId %s", clientId, heartBeatTimerId));
                     break;
                 case JsonCommand.NOTIFICATION_CODE:
                     JSONObject jsonObject = jsonCommand.getCommandObject().getJSONObject(JsonCommand.NOTIFICATION);
@@ -108,11 +153,11 @@ public class XpnsClientVerticle extends AbstractVerticle {
                     break;
                 case JsonCommand.HEART_BEAT_CODE:
                     if (logger.isInfoEnabled()) {
-                        logger.info("heart beat");
+                        logger.info("{} heart beat", clientId);
                     }
                     break;
                 default:
-                    logger.warn(String.format("unknown command code %d", code));
+                    logger.warn(String.format("{} unknown command code %d",clientId, code));
                     break;
             }
         }
@@ -134,13 +179,17 @@ public class XpnsClientVerticle extends AbstractVerticle {
             netSocket.close();
             return;
         }
-        if (System.currentTimeMillis() - this.logonTime > 6 * HEART_BEAT_INTERVAL) {
-            logger.info("close client to re-connect");
+        if (System.currentTimeMillis() - this.logonTime > 6 * HEART_BEAT_INTERVAL
+                && this.status == LOGON) {
+            logger.info("{} close client to re-connect", this.clientId);
             netSocket.close();
+            netSocket = null;
+            status = CLOSE;
             return;
         }
-        if (System.currentTimeMillis() - lastReadWriteTime >= HEART_BEAT_INTERVAL) {
-            logger.info("write heartbeat");
+        if (System.currentTimeMillis() - lastReadWriteTime >= HEART_BEAT_INTERVAL
+                && this.status == LOGON) {
+            logger.info("{} write heartbeat", this.clientId);
 
             JSONObject jsonObject = new JSONObject();
             jsonObject.put(JsonCommand.ACID, this.clientId);
@@ -164,8 +213,8 @@ public class XpnsClientVerticle extends AbstractVerticle {
             lastReadWriteTime = System.currentTimeMillis();
 
             if (logger.isInfoEnabled()) {
-                logger.info(String.format("write command %s %d",
-                        jsonCommand.getAcid(), jsonCommand.getCommandCode()));
+                logger.info(String.format("%s write command %s %d",
+                        this.clientId, jsonCommand.getAcid(), jsonCommand.getCommandCode()));
             }
 
         } catch (UnsupportedEncodingException ue) {
@@ -174,7 +223,10 @@ public class XpnsClientVerticle extends AbstractVerticle {
     }
 
     private int status;
+    private String remoteHost;
+    private int remotePort;
     private String clientId;
+    private NetClient netClient;
     private NetSocket netSocket;
     private long lastReadWriteTime;
     private CommandCodec commandCodec;
@@ -184,6 +236,7 @@ public class XpnsClientVerticle extends AbstractVerticle {
 
     private static final int NEW = 0;
     private static final int LOGON = 1;
+    private static final int CLOSE = 2;
 
     private static final long HEART_BEAT_INTERVAL = 3 * 60 * 1000;
 

@@ -29,30 +29,14 @@ public class MainApp {
 
         Vertx vertx = Vertx.vertx(vertxOptions);
 
-        int batch = commandArguments.getClientsNumber() / commandArguments.getThreads();
 
-        int startId = 1;
-        for (int i = 0 ; i < commandArguments.getThreads(); i++) {
-            int sid;
-            int tid;
-            if (i == commandArguments.getThreads() - 1) {
-                sid = startId;
-                tid = commandArguments.getClientsNumber();
-            } else {
-                sid = startId;
-                tid = startId + batch;
-            }
-
-            vertx.deployVerticle(new XpnsClientsVerticle(commandArguments.getAppId(),
-                    sid,
-                    tid,
-                    commandArguments.getPrefixChar(),
-                    tid - sid + 1,
-                    commandArguments.getTargetHost(),
-                    commandArguments.getTargetPort()));
-
-            startId = tid + 1;
-        }
+        vertx.deployVerticle(new XpnsClientsVerticle(commandArguments.getAppId(),
+                1,
+                commandArguments.getClientsNumber() + 1,
+                commandArguments.getPrefixChar(),
+                commandArguments.getClientsNumber(),
+                commandArguments.getTargetHost(),
+                commandArguments.getTargetPort()));
 
         System.in.read();
     }

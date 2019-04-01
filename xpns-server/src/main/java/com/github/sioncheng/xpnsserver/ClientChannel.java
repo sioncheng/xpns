@@ -29,6 +29,9 @@ public class ClientChannel extends SimpleChannelInboundHandler<Command> {
             return;
         }
 
+        if (!publishInactive) {
+            this.clientChannelEventListener = null;
+        }
         this.publishInactive = publishInactive;
 
         this.ctx.channel().disconnect();
@@ -59,7 +62,8 @@ public class ClientChannel extends SimpleChannelInboundHandler<Command> {
     }
 
     @Override
-    public void channelActive(ChannelHandlerContext ctx) {
+    public void channelActive(ChannelHandlerContext ctx) throws Exception {
+        super.channelActive(ctx);
 
         this.ctx = ctx;
 
@@ -71,11 +75,12 @@ public class ClientChannel extends SimpleChannelInboundHandler<Command> {
             logger.info("channel active {}", ctx.channel().remoteAddress().toString());
         }
 
-        //super.channelActive(ctx);
+
     }
 
     @Override
-    public void channelInactive(ChannelHandlerContext ctx) {
+    public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+        super.channelInactive(ctx);
 
         if (this.clientChannelEventListener != null && this.publishInactive) {
             this.clientChannelEventListener.clientChannelInactive(this);
@@ -84,8 +89,6 @@ public class ClientChannel extends SimpleChannelInboundHandler<Command> {
         if (logger.isInfoEnabled()) {
             logger.info("channel inactive {}", ctx.channel().remoteAddress().toString());
         }
-
-        //super.channelInactive(ctx);
     }
 
     @Override

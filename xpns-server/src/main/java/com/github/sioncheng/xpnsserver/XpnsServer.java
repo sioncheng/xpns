@@ -288,15 +288,27 @@ public class XpnsServer implements ClientChannelEventListener {
             continueCount = 0;
 
             if (clientChannel != null) {
-                this.handleChannelInactive(clientChannel);
+                try {
+                    this.handleChannelInactive(clientChannel);
+                } catch (Exception ite) {
+                    logger.warn("handleChannelInactive error ", ite);
+                }
             }
 
             if (clientCommand != null) {
-                this.handleClientCommand(clientCommand);
+                try {
+                    this.handleClientCommand(clientCommand);
+                } catch (Exception ie) {
+                    logger.warn("handleClientCommand error", ie);
+                }
             }
 
             if (notification != null) {
-                this.handleNotification(notification);
+                try {
+                    this.handleNotification(notification);
+                } catch (Exception e) {
+                    logger.warn("handleNotification error", e);
+                }
             }
         }
         logger.info("exit worker thread method {} {}", i, Thread.currentThread().getName());
